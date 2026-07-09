@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Knights of Gates — Slot</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>&#128737;</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700;800&family=Cinzel:wght@700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- ===================== BOTTOM BAR ===================== -->
+  <div id="bar" class="bar">
+    <!-- TURBO -->
+    <button id="btn-turbo" class="circle-btn" title="Turbo">
+      <svg viewBox="0 0 24 24" width="26" height="26"><path fill="currentColor" d="M13 2 4 14h6l-1 8 11-13h-6l2-7z"/></svg>
+    </button>
+
+    <!-- MENU + BALANCE + WIN capsule -->
+    <div class="capsule capsule-main">
+      <button id="btn-menu" class="flat-btn" title="Menu">
+        <svg viewBox="0 0 24 24" width="26" height="26"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="stat">
+        <span class="stat-label">Balance</span>
+        <span id="balance-val" class="stat-amount">$1,000.00</span>
+      </div>
+      <div class="stat stat-right">
+        <span class="stat-label">Win</span>
+        <span id="win-val" class="stat-amount stat-win">$0.00</span>
+      </div>
+    </div>
+
+    <!-- BET capsule + arrows -->
+    <div class="capsule capsule-bet">
+      <div class="stat">
+        <span class="stat-label">Bet</span>
+        <span id="bet-val" class="stat-amount stat-bet">$1.00</span>
+      </div>
+      <div class="bet-arrows">
+        <button id="btn-bet-up" class="bet-arrow" title="Increase bet">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M6 15l6-6 6 6"/></svg>
+        </button>
+        <button id="btn-bet-down" class="bet-arrow" title="Decrease bet">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- AUTOPLAY -->
+    <button id="btn-auto" class="circle-btn" title="Autoplay">
+      <span id="auto-count" class="auto-count hidden">0</span>
+      <svg id="auto-icon" viewBox="0 0 24 24" width="28" height="28"><path fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" d="M20 11a8 8 0 1 0-.6 4"/><path fill="currentColor" d="M20.8 3.4l.9 5-4.9-1.2z"/></svg>
+    </button>
+
+    <!-- SPIN (largest) -->
+    <button id="btn-spin" class="circle-btn spin-btn" title="Spin">
+      <span id="spin-icon" class="spin-icon">
+        <svg viewBox="0 0 24 24" width="40" height="40"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" d="M20 12a8 8 0 1 1-2.4-5.7"/><path fill="currentColor" d="M21.4 2.6l-.4 6-5.3-2.8z"/></svg>
+      </span>
+    </button>
+
+    <!-- BONUS BUY -->
+    <button id="btn-bonus" class="circle-btn bonus-btn" title="Bonus Buy">
+      <span class="bonus-label">Bonus<br>Buy</span>
+    </button>
+  </div>
+
+  <!-- ===================== MODALS ===================== -->
+  <div id="modal-menu" class="modal-root hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span class="modal-title">Ustawienia</span>
+        <button class="modal-close" data-close>&times;</button>
+      </div>
+      <div class="menu-rows">
+        <div class="menu-row">Dźwięk<span>wkrótce</span></div>
+        <div class="menu-row">Muzyka<span>wkrótce</span></div>
+        <div class="menu-row">Historia gier<span>wkrótce</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-auto" class="modal-root modal-bottom hidden">
+    <div class="modal-card modal-card-auto">
+      <span class="auto-title">Autoplay — liczba spinów</span>
+      <div class="auto-grid">
+        <button class="auto-opt" data-auto="10">10</button>
+        <button class="auto-opt" data-auto="25">25</button>
+        <button class="auto-opt" data-auto="50">50</button>
+        <button class="auto-opt" data-auto="100">100</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-bonus" class="modal-root modal-bonus hidden">
+    <div class="bonus-top">
+      <div class="bonus-stepper">
+        <button id="bonus-bet-down" title="Zmniejsz">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" d="M6 12h12"/></svg>
+        </button>
+        <span id="bonus-bet-val">$1.00</span>
+        <button id="bonus-bet-up" title="Zwiększ">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" d="M12 6v12M6 12h12"/></svg>
+        </button>
+      </div>
+      <button class="bonus-close" data-close title="Zamknij">
+        <svg viewBox="0 0 24 24" width="30" height="30"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="bonus-grid">
+      <!-- placeholder cards — real bonus offers TBD -->
+      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn activate" data-bonus-card>Activate</button></div>
+      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn activate" data-bonus-card>Activate</button></div>
+      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn activate" data-bonus-card>Activate</button></div>
+      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn buy" data-bonus-card>Buy</button></div>
+      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn buy" data-bonus-card>Buy</button></div>
+      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn buy" data-bonus-card>Buy</button></div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

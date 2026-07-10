@@ -88,10 +88,12 @@ export class RgsClient implements GameClient {
     });
 
     const round = res.round ?? {};
+    // Book payoutMultiplier is a x100 fixed-point int (1150 = 11.5x) per the
+    // math-file format docs; prefer an absolute payout amount when present.
     const win =
       typeof round.payout === 'number'
         ? round.payout / API_MULTIPLIER
-        : (round.payoutMultiplier ?? 0) * bet;
+        : ((round.payoutMultiplier ?? 0) / 100) * bet;
 
     return {
       win: +win.toFixed(2),

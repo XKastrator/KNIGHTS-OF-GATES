@@ -20,7 +20,31 @@ i paytable.
 
 Kody muszą się zgadzać z `SYMBOLS` w `src/config.ts` frontendu — i zgadzają się.
 
-## Jak wygenerować pliki do wgrania
+## Szybka ścieżka — pliki do wgrania od ręki (`math/publish/`)
+
+Stake Engine w sekcji **Math** oczekuje wyłącznie plików publikacyjnych, nie
+źródeł `.py`. Generuje je `generate_publish.py` (bez klonowania math-sdk):
+
+```bash
+pip install zstandard
+python3 math/generate_publish.py
+```
+
+Powstaje `math/publish/`:
+
+- `index.json`
+- `books_base.jsonl.zst` (20 020 rund, payoutMultiplier ×100)
+- `lookUpTable_base_0.csv` (wagi dostrojone: RTP 97.00%, hit rate 27%)
+
+**Wgrywanie w ACP:** te trzy pliki muszą leżeć w sekcji Math **na najwyższym
+poziomie** (żadnego folderu `math/` ani `publish/` w ścieżce — publikator
+szuka `index.json` w korzeniu). Usuń z sekcji Math wgrane wcześniej pliki
+źródłowe i wgraj tylko tę trójkę, potem Publish.
+
+Reguły w `generate_publish.py` (paytable/linie/reels) muszą być zsynchronizowane
+z `game_config.py` — docelowo i tak zastąpi je pełny run math-sdk (poniżej).
+
+## Jak wygenerować pliki oficjalnym math-sdk
 
 ```bash
 git clone https://github.com/StakeEngine/math-sdk

@@ -3,7 +3,8 @@
  * files for designed audio without touching code.
  *
  * The AudioContext is created lazily on the first user gesture (autoplay
- * policy) and all buffers are fetched/decoded once.
+ * policy) and all buffers are fetched/decoded once. Loops (reel whirr,
+ * ambience, anticipation) return a handle with stop().
  */
 
 const FILES: Record<string, string> = {
@@ -14,6 +15,13 @@ const FILES: Record<string, string> = {
   victory: 'assets/sfx/victory.wav',
   win: 'assets/sfx/win.wav',
   bigwin: 'assets/sfx/bigwin.wav',
+  megawin: 'assets/sfx/megawin.wav',
+  reel_loop: 'assets/sfx/reel_loop.wav',
+  rollup_tick: 'assets/sfx/rollup_tick.wav',
+  rollup_end: 'assets/sfx/rollup_end.wav',
+  click: 'assets/sfx/click.wav',
+  anticipation: 'assets/sfx/anticipation.wav',
+  ambience: 'assets/sfx/ambience.wav',
 };
 
 export interface PlayOpts {
@@ -21,7 +29,17 @@ export interface PlayOpts {
   rate?: number;
   /** seconds from now */
   delay?: number;
+  loop?: boolean;
+  /** seconds of fade-out used by handle.stop() */
+  fadeOut?: number;
 }
+
+export interface SoundHandle {
+  stop(): void;
+  setVolume(v: number): void;
+}
+
+const NOOP_HANDLE: SoundHandle = { stop: () => {}, setVolume: () => {} };
 
 class SoundManager {
   enabled: boolean;
@@ -30,6 +48,7 @@ class SoundManager {
   private master: GainNode | null = null;
   private buffers = new Map<string, AudioBuffer>();
   private loadStarted = false;
+  private ambienceHandle: SoundHandle | null = null;
 
   constructor() {
     this.enabled = localStorage.getItem('kog-sound') !== 'off';
@@ -45,6 +64,12 @@ class SoundManager {
   setEnabled(on: boolean): void {
     this.enabled = on;
     localStorage.setItem('kog-sound', on ? 'on' : 'off');
+    if (!on) {
+      this.ambienceHandle?.stop();
+      this.ambienceHandle = null;
+    } else {
+      this.startAmbience();
+    }
   }
 
   private ensureContext(): void {
@@ -57,7 +82,7 @@ class SoundManager {
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     if (!this.loadStarted) {
       this.loadStarted = true;
-      void this.loadAll();
+      void this.loadAll().then(() => this.startAmbience());
     }
   }
 
@@ -76,18 +101,41 @@ class SoundManager {
     );
   }
 
-  play(name: keyof typeof FILES | string, opts: PlayOpts = {}): void {
-    if (!this.enabled || !this.ctx || !this.master) return;
+  /** quiet castle courtyard bed under everything */
+  private startAmbience(): void {
+    if (!this.enabled || this.ambienceHandle) return;
+    const handle = this.play('ambience', { loop: true, volume: 0.5 });
+    if (handle !== NOOP_HANDLE) this.ambienceHandle = handle;
+  }
+
+  play(name: keyof typeof FILES | string, opts: PlayOpts = {}): SoundHandle {
+    if (!this.enabled || !this.ctx || !this.master) return NOOP_HANDLE;
     const buffer = this.buffers.get(name);
-    if (!buffer) return;
-    const src = this.ctx.createBufferSource();
+    if (!buffer) return NOOP_HANDLE;
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
     src.buffer = buffer;
+    src.loop = opts.loop ?? false;
     src.playbackRate.value = opts.rate ?? 1;
-    const gain = this.ctx.createGain();
+    const gain = ctx.createGain();
     gain.gain.value = opts.volume ?? 1;
     src.connect(gain);
     gain.connect(this.master);
-    src.start(this.ctx.currentTime + (opts.delay ?? 0));
+    src.start(ctx.currentTime + (opts.delay ?? 0));
+    const fade = opts.fadeOut ?? 0.08;
+    return {
+      stop: () => {
+        try {
+          gain.gain.setTargetAtTime(0, ctx.currentTime, fade / 3);
+          src.stop(ctx.currentTime + fade);
+        } catch {
+          /* already stopped */
+        }
+      },
+      setVolume: (v: number) => {
+        gain.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
+      },
+    };
   }
 }
 

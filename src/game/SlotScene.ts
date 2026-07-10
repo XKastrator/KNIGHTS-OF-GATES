@@ -1,13 +1,30 @@
 import { Application, Container, Graphics, NineSliceSprite, Sprite, Text, TextStyle, Texture } from 'pixi.js';
 import { sound } from '../audio/sound';
-import { BOARD_H, BOARD_W, BOARD_X, BOARD_Y, CELL, DESIGN, FRAME_BORDER, PLATE_PAD, STEP } from '../config';
+import {
+  BOARD_H,
+  BOARD_W,
+  BOARD_X,
+  BOARD_Y,
+  CELL,
+  DESIGN,
+  FRAME_BORDER,
+  PLATE_PAD,
+  STEP,
+  TILE,
+} from '../config';
 import { buildFallbackBackground } from '../fallback/background';
 import { buildFallbackFrame } from '../fallback/frame';
 import { buildFallbackLogo } from '../fallback/logo';
-import type { DuelResult } from '../rgs/client';
+import type { DuelResult, LineWin } from '../rgs/client';
 import { Eases, tween, wait } from '../util/tween';
 import { SlotMachine } from './SlotMachine';
 import { VsPanel } from './VsPanel';
+
+interface WinTier {
+  label: string;
+  sound: string;
+  duration: number;
+}
 
 export interface SceneTextures {
   bg: Texture | null;
@@ -31,6 +48,10 @@ export class SlotScene {
   private sparkTexture: Texture;
   private worldBase = { x: 0, y: 0 };
   private dueling = false;
+  private winFx = new Container();
+  private winDim: Graphics;
+  private anticipationGlows: Graphics[] = [];
+  private anticipationPulse = 0;
 
   constructor(app: Application, tex: SceneTextures, symbolTextures: Texture[]) {
     this.app = app;
@@ -64,10 +85,28 @@ export class SlotScene {
       .fill({ color: 0x0b0e13, alpha: 0.78 });
     this.world.addChild(plate);
 
+    // drifting embers around the torches — ambient life in the scene
+    this.spawnEmbers();
+
     // reels
     this.machine = new SlotMachine(symbolTextures, app.ticker);
     this.machine.container.position.set(BOARD_X, BOARD_Y);
     this.world.addChild(this.machine.container);
+
+    // win-contrast dim over the board + highlight layer above the symbols
+    this.winDim = new Graphics();
+    this.winDim
+      .roundRect(BOARD_X - PLATE_PAD, BOARD_Y - PLATE_PAD, BOARD_W + 2 * PLATE_PAD, BOARD_H + 2 * PLATE_PAD, 16)
+      .fill(0x05070b);
+    this.winDim.alpha = 0;
+    this.winDim.eventMode = 'none';
+    this.world.addChild(this.winDim);
+    this.world.addChild(this.winFx);
+
+    // machine → scene hooks
+    this.machine.onAnticipation = (reels) => this.showAnticipation(reels);
+    this.machine.onAnticipationEnd = () => this.clearAnticipation();
+    this.machine.onVsLanded = (reel, row) => this.flashVsTile(reel, row);
 
     // frame on top of the reel edges
     if (tex.frame) {
@@ -344,5 +383,313 @@ export class SlotScene {
       await tween({ from: 0, to: 0.85, duration: 160, onUpdate: (v) => (this.winGlow.alpha = v) });
       await tween({ from: 0.85, to: 0, duration: 420, onUpdate: (v) => (this.winGlow.alpha = v) });
     }
+  }
+
+  // ============================ WIN PRESENTATION ============================
+
+  /**
+   * Dim the board and pop the winning symbols (gold plates + pulsing ghost
+   * copies) — cleared automatically on the next spin.
+   */
+  showWins(lineWins: LineWin[], duel: DuelResult | null): void {
+    this.clearWins();
+    const positions = new Map<string, { reel: number; row: number }>();
+    for (const lw of lineWins) for (const p of lw.positions) positions.set(`${p.reel},${p.row}`, p);
+    if (duel) for (const p of duel.positions) positions.set(`${p.reel},${p.row}`, p);
+    if (positions.size === 0) return;
+
+    void tween({ from: this.winDim.alpha, to: 0.4, duration: 220, onUpdate: (v) => (this.winDim.alpha = v) });
+
+    for (const { reel, row } of positions.values()) {
+      const cx = BOARD_X + (reel + 0.5) * STEP;
+      const cy = BOARD_Y + (row + 0.5) * STEP;
+
+      const plate = new Graphics();
+      plate
+        .roundRect(cx - TILE / 2 - 4, cy - TILE / 2 - 4, TILE + 8, TILE + 8, 16)
+        .stroke({ width: 4, color: 0xf5c542 })
+        .roundRect(cx - TILE / 2, cy - TILE / 2, TILE, TILE, 14)
+        .fill({ color: 0xf5c542, alpha: 0.12 });
+      this.winFx.addChild(plate);
+
+      const src = this.machine.spriteAt(reel, row);
+      if (src) {
+        const ghost = new Sprite(src.texture);
+        ghost.anchor.set(0.5);
+        ghost.position.set(cx, cy);
+        this.winFx.addChild(ghost);
+        void this.pulseLoop(ghost, plate);
+      }
+    }
+  }
+
+  private async pulseLoop(ghost: Sprite, plate: Graphics): Promise<void> {
+    for (let i = 0; i < 3; i++) {
+      if (ghost.destroyed) return;
+      await tween({
+        from: 1,
+        to: 1.16,
+        duration: 260,
+        ease: Eases.quadOut,
+        onUpdate: (v) => {
+          if (!ghost.destroyed) ghost.scale.set(v);
+          if (!plate.destroyed) plate.alpha = 0.6 + (v - 1) * 2.5;
+        },
+      });
+      await tween({
+        from: 1.16,
+        to: 1,
+        duration: 300,
+        ease: Eases.quadIn,
+        onUpdate: (v) => {
+          if (!ghost.destroyed) ghost.scale.set(v);
+        },
+      });
+    }
+  }
+
+  /** Remove win highlights (called on the next spin). */
+  clearWins(): void {
+    this.winFx.removeChildren().forEach((c) => c.destroy());
+    void tween({ from: this.winDim.alpha, to: 0, duration: 150, onUpdate: (v) => (this.winDim.alpha = v) });
+  }
+
+  /**
+   * Tiered celebration overlay (BIG/MEGA/LEGENDARY): plaque with a rolling
+   * amount, coin fountain and fanfare. Click skips. Resolves when done.
+   */
+  async celebrate(amount: number, tier: WinTier): Promise<void> {
+    sound.play(tier.sound, { volume: 1 });
+    const overlay = new Container();
+    overlay.eventMode = 'static';
+    this.world.addChild(overlay);
+
+    const shade = new Graphics();
+    shade.rect(-200, -200, DESIGN.width + 400, DESIGN.height + 400).fill({ color: 0x000000, alpha: 0.72 });
+    overlay.addChild(shade);
+
+    const cx = DESIGN.width / 2;
+    const cy = DESIGN.height / 2 - 60;
+
+    const title = new Text({
+      text: tier.label,
+      style: new TextStyle({
+        fontFamily: ['Cinzel', 'Georgia', 'serif'],
+        fontWeight: '900',
+        fontSize: 104,
+        fill: 0xffe9a8,
+        stroke: { color: 0x4c380c, width: 12 },
+        dropShadow: { color: 0x000000, blur: 12, distance: 8, angle: Math.PI / 2.5, alpha: 0.85 },
+        letterSpacing: 4,
+      }),
+    });
+    title.anchor.set(0.5);
+    title.position.set(cx, cy);
+    overlay.addChild(title);
+
+    const amountText = new Text({
+      text: '$0.00',
+      style: new TextStyle({
+        fontFamily: ['Cinzel', 'Georgia', 'serif'],
+        fontWeight: '900',
+        fontSize: 78,
+        fill: 0xffffff,
+        stroke: { color: 0x241a04, width: 8 },
+        dropShadow: { color: 0x000000, blur: 8, distance: 6, angle: Math.PI / 2.5, alpha: 0.8 },
+      }),
+    });
+    amountText.anchor.set(0.5);
+    amountText.position.set(cx, cy + 120);
+    overlay.addChild(amountText);
+
+    // coin fountain
+    const coins: { s: Sprite; vx: number; vy: number; vr: number }[] = [];
+    for (let i = 0; i < 48; i++) {
+      const s = new Sprite(this.sparkTexture);
+      s.anchor.set(0.5);
+      s.tint = i % 3 === 0 ? 0xffe9a8 : 0xf5c542;
+      s.scale.set(1.6 + Math.random() * 1.8);
+      s.position.set(cx + (Math.random() * 2 - 1) * 120, cy + 160);
+      coins.push({
+        s,
+        vx: (Math.random() * 2 - 1) * 9,
+        vy: -13 - Math.random() * 9,
+        vr: (Math.random() * 2 - 1) * 0.2,
+      });
+      overlay.addChild(s);
+    }
+    let coinsFlying = true;
+    const coinTick = () => {
+      if (!coinsFlying) return;
+      for (const c of coins) {
+        c.vy += 0.42;
+        c.s.x += c.vx;
+        c.s.y += c.vy;
+        c.s.rotation += c.vr;
+        if (c.s.y > DESIGN.height + 60) c.s.alpha = 0;
+      }
+    };
+    this.app.ticker.add(coinTick);
+
+    let skipped = false;
+    const skip = () => (skipped = true);
+    window.addEventListener('pointerdown', skip);
+
+    await tween({
+      from: 0.2,
+      to: 1,
+      duration: 320,
+      ease: Eases.backOut(1.6),
+      onUpdate: (v) => {
+        title.scale.set(v);
+        overlay.alpha = Math.min(1, v);
+      },
+    });
+
+    // rolling amount — the classic dramatized roll-up
+    const rollMs = tier.duration * 0.62;
+    let elapsed = 0;
+    let lastTick = 0;
+    while (elapsed < rollMs && !skipped) {
+      await wait(16);
+      elapsed += 16;
+      const k = Eases.quadOut(Math.min(1, elapsed / rollMs));
+      amountText.text = `$${(amount * k).toFixed(2)}`;
+      if (elapsed - lastTick > 70) {
+        sound.play('rollup_tick', { volume: 0.55, rate: 0.95 + Math.random() * 0.15 });
+        lastTick = elapsed;
+      }
+    }
+    amountText.text = `$${amount.toFixed(2)}`;
+    sound.play('rollup_end', { volume: 0.8 });
+
+    const holdMs = skipped ? 250 : tier.duration - rollMs;
+    await wait(holdMs);
+
+    window.removeEventListener('pointerdown', skip);
+    await tween({ from: 1, to: 0, duration: 260, onUpdate: (v) => (overlay.alpha = v) });
+    coinsFlying = false;
+    this.app.ticker.remove(coinTick);
+    overlay.destroy({ children: true });
+  }
+
+  // ============================ ANTICIPATION FX ============================
+
+  private showAnticipation(reels: number[]): void {
+    this.clearAnticipation();
+    for (const reel of reels) {
+      const g = new Graphics();
+      g.roundRect(BOARD_X + reel * STEP + 4, BOARD_Y + 2, STEP - 8, BOARD_H - 4, 12)
+        .fill({ color: 0xf5c542, alpha: 0.14 })
+        .stroke({ width: 3, color: 0xf5c542, alpha: 0.8 });
+      g.eventMode = 'none';
+      this.world.addChild(g);
+      this.anticipationGlows.push(g);
+    }
+    // pulse until cleared
+    const pulseId = ++this.anticipationPulse;
+    const pulse = async () => {
+      while (this.anticipationGlows.length > 0 && pulseId === this.anticipationPulse) {
+        await tween({
+          from: 0.45,
+          to: 1,
+          duration: 260,
+          onUpdate: (v) => this.anticipationGlows.forEach((g) => (g.alpha = v)),
+        });
+        await tween({
+          from: 1,
+          to: 0.45,
+          duration: 260,
+          onUpdate: (v) => this.anticipationGlows.forEach((g) => (g.alpha = v)),
+        });
+      }
+    };
+    void pulse();
+  }
+
+  private clearAnticipation(): void {
+    this.anticipationPulse++;
+    this.anticipationGlows.forEach((g) => g.destroy());
+    this.anticipationGlows = [];
+  }
+
+  /** Expanding gold ring when a VS symbol snaps onto the board. */
+  private flashVsTile(reel: number, row: number): void {
+    const cx = BOARD_X + (reel + 0.5) * STEP;
+    const cy = BOARD_Y + (row + 0.5) * STEP;
+    const ring = new Graphics();
+    ring.circle(0, 0, TILE / 2).stroke({ width: 6, color: 0xf5c542 });
+    ring.position.set(cx, cy);
+    ring.eventMode = 'none';
+    this.world.addChild(ring);
+    sound.play('rollup_end', { rate: 0.7, volume: 0.7 });
+    void tween({
+      from: 1,
+      to: 1.9,
+      duration: 420,
+      ease: Eases.quadOut,
+      onUpdate: (v) => {
+        ring.scale.set(v);
+        ring.alpha = 1 - (v - 1) / 0.9;
+      },
+    }).then(() => ring.destroy());
+  }
+
+  // ============================ AMBIENT EMBERS =============================
+
+  private spawnEmbers(): void {
+    const embers = new Container();
+    embers.eventMode = 'none';
+    this.world.addChildAt(embers, 0);
+    const spots = [
+      { x: 175, y: 560 },
+      { x: 300, y: 480 },
+      { x: 1620, y: 480 },
+      { x: 1745, y: 560 },
+    ];
+    interface Ember {
+      s: Sprite;
+      t: number;
+      life: number;
+      x0: number;
+      sway: number;
+      speed: number;
+    }
+    const parts: Ember[] = [];
+    const reset = (e: Ember) => {
+      const spot = spots[Math.floor(Math.random() * spots.length)];
+      e.x0 = spot.x + (Math.random() * 2 - 1) * 55;
+      e.s.y = spot.y + Math.random() * 60;
+      e.t = 0;
+      e.life = 2600 + Math.random() * 2600;
+      e.sway = 8 + Math.random() * 18;
+      e.speed = 0.02 + Math.random() * 0.025;
+      e.s.scale.set(0.35 + Math.random() * 0.5);
+    };
+    for (let i = 0; i < 14; i++) {
+      const s = new Sprite(this.sparkTexture);
+      s.anchor.set(0.5);
+      s.tint = Math.random() < 0.5 ? 0xff9a30 : 0xffd76a;
+      s.blendMode = 'add';
+      const e: Ember = { s, t: 0, life: 1, x0: 0, sway: 0, speed: 0 };
+      reset(e);
+      e.t = Math.random() * e.life; // desync
+      parts.push(e);
+      embers.addChild(s);
+    }
+    this.app.ticker.add(() => {
+      const dt = this.app.ticker.deltaMS;
+      for (const e of parts) {
+        e.t += dt;
+        const k = e.t / e.life;
+        if (k >= 1) {
+          reset(e);
+          continue;
+        }
+        e.s.y -= e.speed * dt;
+        e.s.x = e.x0 + Math.sin(e.t / 420) * e.sway;
+        e.s.alpha = k < 0.15 ? k / 0.15 : 1 - (k - 0.15) / 0.85;
+      }
+    });
   }
 }

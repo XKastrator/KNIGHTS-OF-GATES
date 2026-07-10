@@ -1,9 +1,15 @@
 import { sound } from '../audio/sound';
-import { BONUS_COST_MULT, BOOST_COST_MULT, DUEL_MULTIPLIER } from '../config';
+import {
+  BONUS_COST_MULT,
+  BOOST_COST_MULT,
+  DUEL_MULTIPLIER,
+  rollupDuration,
+  WIN_TIERS,
+} from '../config';
 import { SlotScene } from '../game/SlotScene';
 import type { GameClient } from '../rgs/client';
 import { bet, bus, setBetSteps, state, stepBet } from '../state';
-import { wait } from '../util/tween';
+import { Eases, wait } from '../util/tween';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -42,6 +48,12 @@ export function initBar(scene: SlotScene, client: GameClient): void {
   };
 
   let autoLeft = 0;
+  let slamUsed = false;
+
+  // soft click on every button press (physical feedback)
+  document.addEventListener('pointerdown', (e) => {
+    if ((e.target as HTMLElement | null)?.closest('button')) sound.play('click', { volume: 0.5 });
+  });
 
   function render(): void {
     balanceVal.textContent = fmt(state.balance);
@@ -62,8 +74,10 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     autoCount.classList.toggle('hidden', state.autoRemaining === 0);
     autoIcon.classList.toggle('hidden', state.autoRemaining > 0);
     autoCount.textContent = String(state.autoRemaining);
-    btnSpin.disabled = state.spinning;
-    btnSpin.classList.toggle('spinning', state.spinning);
+    // while reels run the button becomes STOP (slam); after slamming it waits
+    btnSpin.disabled = state.spinning && slamUsed;
+    btnSpin.classList.toggle('spinning', state.spinning && slamUsed);
+    btnSpin.classList.toggle('can-stop', state.spinning && !slamUsed);
   }
 
   bus.on('change', render);
@@ -82,6 +96,31 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     state.autoRemaining = 0;
   }
 
+  /** Dramatized win meter roll-up with ticking (the classic "roll-up"). */
+  async function rollupWin(amount: number, duration: number): Promise<void> {
+    if (amount <= 0 || duration <= 0) {
+      state.win = amount;
+      bus.emit('change');
+      return;
+    }
+    let elapsed = 0;
+    let lastTick = 0;
+    while (elapsed < duration) {
+      await wait(16);
+      elapsed += 16;
+      const k = Eases.quadOut(Math.min(1, elapsed / duration));
+      state.win = +(amount * k).toFixed(2);
+      bus.emit('change');
+      if (elapsed - lastTick > 70 && duration > 400) {
+        sound.play('rollup_tick', { volume: 0.5, rate: 0.95 + Math.random() * 0.15 });
+        lastTick = elapsed;
+      }
+    }
+    state.win = amount;
+    bus.emit('change');
+    if (duration > 400) sound.play('rollup_end', { volume: 0.7 });
+  }
+
   /** One full round: debit via client → spin reels onto the result → credit. */
   async function doSpin(kind: 'base' | 'bonus' = 'base'): Promise<void> {
     if (state.spinning) return;
@@ -96,7 +135,9 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     }
 
     state.spinning = true;
+    slamUsed = false;
     state.win = 0;
+    scene.clearWins();
     bus.emit('change');
     bus.emit('spinstart');
 
@@ -122,19 +163,34 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     }
 
     state.spinning = false;
-    state.win = round.win;
+    bus.emit('change');
+
+    // server credit first, presentation second — balance updates after roll-up
+    let creditedBalance: number | null = null;
     if (round.win > 0) {
       try {
-        const newBalance = await client.endRound();
-        if (newBalance !== null) state.balance = newBalance;
+        creditedBalance = await client.endRound();
       } catch (err) {
         console.warn('end-round failed:', err);
       }
-      // the duel sequence already scored its own award sound
-      const lineWin = round.win - (round.duel?.award ?? 0);
-      if (lineWin > 0) sound.play(round.win / stake >= 10 ? 'bigwin' : 'win');
-      void scene.flashWin();
     }
+
+    if (round.win > 0) {
+      scene.showWins(round.lineWins, round.duel);
+      const mult = round.win / stake;
+      const tier = WIN_TIERS.find((t) => mult >= t.min);
+      const lineWin = round.win - (round.duel?.award ?? 0);
+      if (!tier && lineWin > 0) sound.play('win', { volume: 0.85 });
+      void scene.flashWin();
+
+      const rollDur = state.turbo ? Math.min(600, rollupDuration(mult)) : rollupDuration(mult);
+      await Promise.all([
+        rollupWin(round.win, rollDur),
+        tier && !state.turbo ? scene.celebrate(round.win, tier) : Promise.resolve(),
+      ]);
+    }
+
+    if (creditedBalance !== null) state.balance = creditedBalance;
     bus.emit('change');
     bus.emit('spinend');
   }
@@ -153,7 +209,17 @@ export function initBar(scene: SlotScene, client: GameClient): void {
   }
 
   // --- bar buttons
-  btnSpin.addEventListener('click', () => void doSpin());
+  btnSpin.addEventListener('click', () => {
+    if (state.spinning) {
+      if (!slamUsed) {
+        slamUsed = true;
+        scene.machine.slam();
+        bus.emit('change');
+      }
+      return;
+    }
+    void doSpin();
+  });
   btnTurbo.addEventListener('click', () => {
     state.turbo = !state.turbo;
     bus.emit('change');
@@ -218,7 +284,15 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     if (modalOpen) return;
     if (e.code === 'Space') {
       e.preventDefault();
-      void doSpin();
+      if (state.spinning) {
+        if (!slamUsed) {
+          slamUsed = true;
+          scene.machine.slam();
+          bus.emit('change');
+        }
+      } else {
+        void doSpin();
+      }
     } else if (e.code === 'KeyV' && !state.spinning) {
       void scene.playDuelSequence({
         positions: [{ reel: 2, row: 2 }],

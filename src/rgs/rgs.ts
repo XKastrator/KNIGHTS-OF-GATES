@@ -1,5 +1,5 @@
 import { COLS, DUEL_MULTIPLIER, ROWS, SYMBOL_INDEX } from '../config';
-import type { AuthResult, DuelResult, GameClient, RoundResult } from './client';
+import type { AuthResult, DuelResult, GameClient, LineWin, RoundResult } from './client';
 import { urlParam } from './client';
 
 /** Stake Engine amounts are integers with 6 decimal places: $1.00 = 1_000_000. */
@@ -121,6 +121,7 @@ export class RgsClient implements GameClient {
       balance: this.toMajor(res.balance),
       grid,
       duel: extractDuel(events, grid, bet),
+      lineWins: extractLineWins(events, bet),
     };
   }
 
@@ -138,7 +139,27 @@ type BookEvent = {
   positions?: { reel: number; row: number }[];
   award?: number;
   multiplier?: number;
+  wins?: {
+    symbol?: string;
+    kind?: number;
+    win?: number;
+    positions?: { reel: number; row: number }[];
+  }[];
 };
+
+/** Line wins from the book's winInfo event (amounts are x100 multipliers). */
+function extractLineWins(events: BookEvent[], bet: number): LineWin[] {
+  const ev = events.find((e) => e?.type === 'winInfo' && Array.isArray(e.wins));
+  if (!ev?.wins) return [];
+  return ev.wins
+    .filter((w) => Array.isArray(w.positions) && w.positions.length > 0)
+    .map((w) => ({
+      symbol: w.symbol ?? '',
+      count: w.kind ?? w.positions!.length,
+      amount: +(((w.win ?? 0) / 100) * bet).toFixed(2),
+      positions: w.positions!,
+    }));
+}
 
 /**
  * Duel info: prefer the explicit "duel" book event; otherwise reconstruct

@@ -46,6 +46,31 @@ Tło, ramka i logo mają generowane fallbacki — docelowe pliki wrzuć do
 Symbole placeholderowe rysuje `src/game/symbols.ts`; docelowe PNG podmienimy
 jednym ruchem (kolejność wg `SYMBOLS` w `src/config.ts`, kody zgodne z math).
 
+## Game feel (fizyczność)
+
+Warstwa "czucia" wzorowana na fizycznych szafach i liderach online
+(research: mechanika stepper-motor + detent, roll-up, antycypacja):
+
+- **Fizyka bębnów**: nakręcenie (pull-back) → bezwładny rozpęd → jazda z
+  ±5% wariancją prędkości na bęben → zapadka z przestrzeleniem ("clunk"),
+  squash kolumny i wgniecenie całej planszy przy każdym stopie (mocniejsze
+  na ostatnim bębnie). Smuga ruchu rośnie z prędkością.
+- **Slam**: w trakcie spinu przycisk zmienia się w STOP — klik/spacja
+  dobija wszystkie bębny natychmiast na zapadkę.
+- **Antycypacja**: gdy VS wpadnie na wcześniejszym bębnie, pozostałe
+  zwalniają do pełzania, kolumny dostają pulsujący złoty glow i narastający
+  dźwięk.
+- **Uczciwa plansza**: demo ewaluuje linie identycznie jak math
+  (`src/rgs/lines.ts`) — to co leży na bębnach, to dokładnie to, co płaci.
+- **Prezentacja wygranych**: przygaszenie planszy + złote ramki i pulsujące
+  symbole wygrywających pól, **roll-up** licznika z tikami i dzwonkiem,
+  tiery WIELKA/MEGA/LEGENDARNA WYGRANA (≥12×/35×/90×) z pełnoekranową
+  plakietą, fontanną monet i fanfarą (klik pomija).
+- **Audio**: pętla mechanicznego szumu bębnów, thudy stopów z rosnącym
+  pitchem, kliki UI, ambient dziedzińca (wiatr + trzask pochodni), ściszany
+  przełącznikiem w menu.
+- **Życie sceny**: żar unoszący się znad pochodni.
+
 ## Panel pojedynku (VS) i dźwięk
 
 - 60 dostarczonych klatek pojedynku (niebieski wygrywa) jest zakodowane do

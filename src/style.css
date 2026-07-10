@@ -74,6 +74,12 @@ button { font-family: var(--font); }
 .spin-icon { display: flex; align-items: center; justify-content: center; color: #fff; }
 .spin-btn.spinning .spin-icon { animation: rot 0.75s linear infinite; }
 .bar.turbo .spin-btn.spinning .spin-icon { animation-duration: 0.42s; }
+.spin-btn .icon-stop { display: none; }
+.spin-btn.can-stop .icon-spin { display: none; }
+.spin-btn.can-stop .icon-stop { display: block; }
+.spin-btn.can-stop { border-color: var(--danger); }
+.circle-btn:active { transform: scale(0.93); }
+.bet-arrow:active, .bonus-card-btn:active, .auto-opt:active { transform: scale(0.95); }
 
 .bonus-btn { width: 80px; height: 80px; border-color: var(--bonus); box-shadow: inset 0 0 12px rgba(123, 135, 148, 0.1); }
 .bonus-btn:hover { background: var(--bonus-soft); }

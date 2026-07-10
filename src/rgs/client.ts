@@ -23,6 +23,17 @@ export interface DuelResult {
   multiplier: number;
 }
 
+export interface LineWin {
+  /** symbol code, e.g. "H1" */
+  symbol: string;
+  /** matched count from the left */
+  count: number;
+  /** amount in major currency units */
+  amount: number;
+  /** winning positions to highlight */
+  positions: { reel: number; row: number }[];
+}
+
 export interface RoundResult {
   /** total round win in major currency units */
   win: number;
@@ -32,6 +43,8 @@ export interface RoundResult {
   grid: number[][] | null;
   /** knight duel triggered by VS symbols, if any */
   duel: DuelResult | null;
+  /** line wins with positions (win highlights); empty when unknown */
+  lineWins: LineWin[];
 }
 
 export interface GameClient {

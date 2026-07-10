@@ -147,4 +147,86 @@ shimmer = highpass(rng.normal(0, 1, int(SR * chord_dur)), 5500) * env(int(SR * c
 big = np.concatenate([np.concatenate(parts[:-1]), parts[-1] * 0.6 + chord + shimmer])
 write("bigwin.wav", normalize(big, 0.85))
 
+# ---- megawin.wav — grander: three rising chords + bells + cymbal wash
+def chord_hit(freqs, dur, sustain=2.0):
+    x = sum(saw_note(f, dur) for f in freqs) / len(freqs)
+    return x * env(int(SR * dur), 0.04, 0.96, sustain)
+
+mega = np.concatenate(
+    [
+        chord_hit((392.0, 493.88, 587.33), 0.30, 3.0),
+        chord_hit((440.0, 554.37, 659.26), 0.30, 3.0),
+        chord_hit((523.25, 659.26, 783.99, 1046.5), 1.15, 1.6),
+    ]
+)
+bells = np.zeros_like(mega)
+for i, f in enumerate((1567.98, 2093.0, 2637.02, 3135.96)):
+    start = int(SR * (0.62 + i * 0.12))
+    seg = t(0.7)
+    b = np.sin(2 * np.pi * f * seg) * env(len(seg), 0.005, 0.995, 6) * 0.22
+    bells[start : start + len(b)] += b[: max(0, len(bells) - start)]
+cym = highpass(rng.normal(0, 1, len(mega)), 6000) * env(len(mega), 0.02, 0.98, 2.5) * 0.16
+write("megawin.wav", normalize(mega + bells + cym, 0.9))
+
+# ---- reel_loop.wav — seamless mechanical whirr (played while reels spin)
+dur = 1.2
+n = int(SR * dur)
+base_noise = onepole_lp(rng.normal(0, 1, n), 900)
+# rhythmic ticking of symbols passing the payline (~22 per second)
+ticks = np.zeros(n)
+period = int(SR / 22)
+for s in range(0, n - 40, period):
+    ticks[s : s + 40] += np.hanning(40) * 0.7
+tick_noise = highpass(rng.normal(0, 1, n), 2500) * ticks
+loop = base_noise * 0.5 + tick_noise * 0.35
+# crossfade tail into head for a seamless loop
+xf = int(SR * 0.05)
+fade = np.linspace(0, 1, xf)
+loop[:xf] = loop[:xf] * fade + loop[-xf:] * (1 - fade)
+loop = loop[: n - xf]
+write("reel_loop.wav", normalize(loop, 0.4))
+
+# ---- rollup_tick.wav / rollup_end.wav — win meter counting
+seg = t(0.045)
+tick = np.sin(2 * np.pi * 1245 * seg) * env(len(seg), 0.02, 0.98, 9)
+tick += np.sin(2 * np.pi * 1868 * seg) * env(len(seg), 0.02, 0.98, 12) * 0.4
+write("rollup_tick.wav", normalize(tick, 0.5))
+
+seg = t(0.5)
+ding = (np.sin(2 * np.pi * 1318.5 * seg) + 0.5 * np.sin(2 * np.pi * 1975.5 * seg)) * env(len(seg), 0.005, 0.995, 5)
+write("rollup_end.wav", normalize(ding, 0.6))
+
+# ---- click.wav — soft UI button press
+seg = t(0.05)
+click = highpass(rng.normal(0, 1, len(seg)), 1800) * env(len(seg), 0.01, 0.99, 18)
+click += np.sin(2 * np.pi * 620 * seg) * env(len(seg), 0.005, 0.995, 16) * 0.5
+write("click.wav", normalize(click, 0.45))
+
+# ---- anticipation.wav — rising shimmer while the last reels crawl
+dur = 1.6
+n = int(SR * dur)
+tt = t(dur)
+trem = np.sin(2 * np.pi * (6 + 8 * tt / dur) * tt) ** 2
+tone = np.sin(2 * np.pi * (220 + 160 * (tt / dur) ** 2) * tt) * 0.5
+shimmer2 = highpass(rng.normal(0, 1, n), 4000) * trem * 0.35
+grow = np.linspace(0.25, 1.0, n) ** 1.5
+write("anticipation.wav", normalize((tone + shimmer2) * grow, 0.6))
+
+# ---- ambience.wav — castle courtyard: wind + torch crackle (quiet loop)
+dur = 4.0
+n = int(SR * dur)
+wind = onepole_lp(rng.normal(0, 1, n), 240)
+sway = 0.5 + 0.5 * np.sin(2 * np.pi * 0.21 * t(dur))
+crackle = np.zeros(n)
+for _ in range(90):
+    s = rng.integers(0, n - 500)
+    ln = rng.integers(80, 420)
+    crackle[s : s + ln] += highpass(rng.normal(0, 1, ln), 3000) * np.exp(-6 * np.linspace(0, 1, ln)) * rng.uniform(0.2, 0.7)
+amb = wind * sway * 0.6 + crackle * 0.25
+xf = int(SR * 0.25)
+fade = np.linspace(0, 1, xf)
+amb[:xf] = amb[:xf] * fade + amb[-xf:] * (1 - fade)
+amb = amb[: n - xf]
+write("ambience.wav", normalize(amb, 0.32))
+
 print("done ->", OUT)

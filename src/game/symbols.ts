@@ -40,6 +40,42 @@ export function buildSymbolTextures(renderer: Renderer): Texture[] {
       const pip = new Graphics();
       pip.roundRect(CELL / 2 - 18, CELL / 2 + 38, 36, 6, 3).fill(def.color);
       c.addChild(pip);
+    } else if (def.art === 'vs') {
+      // duel trigger: blue vs red split with crossed blades
+      const split = new Graphics();
+      split.moveTo(m + 6, m + 6).lineTo(m + TILE - 6, m + 6).lineTo(m + 6, m + TILE - 6).closePath().fill(0x24408f);
+      split
+        .moveTo(m + TILE - 6, m + 6)
+        .lineTo(m + TILE - 6, m + TILE - 6)
+        .lineTo(m + 6, m + TILE - 6)
+        .closePath()
+        .fill(0x8f2020);
+      split.moveTo(m + TILE - 6, m + 6).lineTo(m + 6, m + TILE - 6).stroke({ width: 3, color: 0xc9a23f });
+      split.roundRect(m + 6, m + 6, TILE - 12, TILE - 12, 12).stroke({ width: 2.5, color: 0xc9a23f });
+      c.addChild(split);
+      const blades = new Graphics();
+      blades.roundRect(-38, -5, 76, 10, 4).fill(0xdfe6ee).stroke({ width: 2, color: 0x5c6774 });
+      blades.rotation = Math.PI / 4;
+      blades.position.set(CELL / 2, CELL / 2);
+      const blades2 = new Graphics();
+      blades2.roundRect(-38, -5, 76, 10, 4).fill(0xdfe6ee).stroke({ width: 2, color: 0x5c6774 });
+      blades2.rotation = -Math.PI / 4;
+      blades2.position.set(CELL / 2, CELL / 2);
+      c.addChild(blades, blades2);
+      const vsText = new Text({
+        text: 'VS',
+        style: new TextStyle({
+          fontFamily: ['Cinzel', 'Georgia', 'serif'],
+          fontWeight: '900',
+          fontSize: 44,
+          fill: 0xf5c542,
+          stroke: { color: 0x1a1206, width: 7 },
+          dropShadow: { color: 0x000000, blur: 5, distance: 3, angle: Math.PI / 2, alpha: 0.7 },
+        }),
+      });
+      vsText.anchor.set(0.5);
+      vsText.position.set(CELL / 2, CELL / 2);
+      c.addChild(vsText);
     } else if (def.art === 'wild') {
       // gold plaque
       const gold = new Graphics();

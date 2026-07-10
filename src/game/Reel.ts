@@ -1,5 +1,5 @@
 import { Container, Sprite, Texture, Ticker } from 'pixi.js';
-import { REEL, ROWS, STEP, SYMBOLS } from '../config';
+import { REEL, REEL_FILL_COUNT, ROWS, STEP } from '../config';
 import { Eases, tween } from '../util/tween';
 
 const SPRITE_COUNT = ROWS + 2; // one buffer sprite above and below the window
@@ -32,11 +32,11 @@ export class Reel {
     this.update();
   }
 
-  /** Symbol id at strip index i (lazily randomized). */
+  /** Symbol id at strip index i (lazily randomized; specials excluded). */
   private symAt(i: number): number {
     let v = this.strip.get(i);
     if (v === undefined) {
-      v = Math.floor(Math.random() * SYMBOLS.length);
+      v = Math.floor(Math.random() * REEL_FILL_COUNT);
       this.strip.set(i, v);
     }
     return v;

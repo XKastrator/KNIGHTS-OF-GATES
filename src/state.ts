@@ -29,6 +29,8 @@ export const state = {
   turbo: false,
   autoRemaining: 0,
   currency: 'USD',
+  /** Duel Boost toggle — spins run in the "boost" mode at 5× cost */
+  boostActive: false,
 };
 
 export function bet(): number {

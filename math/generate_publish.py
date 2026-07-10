@@ -44,9 +44,17 @@ BONUS_MIN_X100 = 500
 NUM_BONUS_SIMS = 4_000
 NUM_BONUS_WINCAP_SIMS = 15
 
+# duel boost: BST0 reels carry far more VS stops (~48% duel chance), cost 5x
+BOOST_COST = 5.0
+NUM_BOOST_SIMS = 20_000
+
 ROWS = 5
 REELS = 5
 WILD = "W"
+VS = "VS"
+# blue knight wins his 2x for every landed VS symbol (placeholder rule until
+# the full duel spec arrives — then red/blue outcomes come from a weight table)
+DUEL_AWARD_X100 = 200
 
 # (count, symbol) -> payout x100  — keep identical to game_config.py pay_group
 PAYTABLE_X100 = {
@@ -102,6 +110,8 @@ def eval_lines(board: list[list[str]]) -> tuple[int, list[dict]]:
         target = next((s for s in symbols if s != WILD), None)
         if target is None:
             target = "H1"  # all-wild line pays as the top symbol
+        if target == VS:
+            continue  # VS is a special symbol — it never pays on lines
         count = 0
         for s in symbols:
             if s == target or s == WILD:
@@ -123,7 +133,32 @@ def eval_lines(board: list[list[str]]) -> tuple[int, list[dict]]:
     return min(total, WINCAP_X100), wins
 
 
-def book_events(board: list[list[str]], payout_x100: int, wins: list[dict]) -> list[dict]:
+def eval_round(board: list[list[str]]) -> tuple[int, list[dict], dict | None]:
+    """Lines + duel: every landed VS triggers the duel, blue wins 2x per VS."""
+    line_total, wins = eval_lines(board)
+    vs_positions = [
+        {"reel": reel, "row": row}
+        for reel in range(REELS)
+        for row in range(ROWS)
+        if board[reel][row] == VS
+    ]
+    duel = None
+    total = line_total
+    if vs_positions:
+        award = DUEL_AWARD_X100 * len(vs_positions)
+        total += award
+        duel = {
+            "positions": vs_positions,
+            "winner": "blue",
+            "multiplier": DUEL_AWARD_X100 // 100,
+            "award": award,
+        }
+    return min(total, WINCAP_X100), wins, duel
+
+
+def book_events(
+    board: list[list[str]], payout_x100: int, wins: list[dict], duel: dict | None
+) -> list[dict]:
     events: list[dict] = [
         {
             "index": 0,
@@ -132,8 +167,10 @@ def book_events(board: list[list[str]], payout_x100: int, wins: list[dict]) -> l
             "gameType": "basegame",
         }
     ]
+    if duel:
+        events.append({"index": len(events), "type": "duel", **duel})
     if payout_x100 > 0:
-        events.append({"index": 1, "type": "winInfo", "totalWin": payout_x100, "wins": wins})
+        events.append({"index": len(events), "type": "winInfo", "totalWin": payout_x100, "wins": wins})
     events.append({"index": len(events), "type": "setTotalWin", "amount": payout_x100})
     events.append({"index": len(events), "type": "finalWin", "amount": payout_x100})
     return events
@@ -213,12 +250,41 @@ def solve_bonus_weights(payouts_x100: list[int]) -> list[int]:
     return weights
 
 
-def write_mode(name: str, boards, payouts, all_wins, weights) -> list[str]:
+def solve_mean_weights(payouts_x100: list[int], target_mean: float, label: str) -> list[int]:
+    """
+    Two-bucket solve: sub-10x rounds anchor at BASE_WEIGHT, the >=10x tail gets
+    one solved weight so the weighted mean hits `target_mean` (in bet units).
+    """
+    a = BASE_WEIGHT
+    small = [p for p in payouts_x100 if p < 1000]
+    big = [p for p in payouts_x100 if p >= 1000]
+    if not big:
+        raise SystemExit(f"{label}: no >=10x sims — enrich reels/quotas")
+    s_small = sum(p / 100 for p in small)
+    s_big = sum(p / 100 for p in big)
+    n_small, n_big = len(small), len(big)
+    x = a * (target_mean * n_small - s_small) / (s_big - target_mean * n_big)
+    if x < 1:
+        raise SystemExit(f"{label}: weight solve failed (x={x:.3f})")
+    big_weight = round(x)
+    weights = [a if p < 1000 else big_weight for p in payouts_x100]
+    mean = sum(w * p / 100 for w, p in zip(weights, payouts_x100)) / sum(weights)
+    print(f"{label} weights — small: {a}, big: {big_weight} | mean {mean:.3f}x (target {target_mean:.3f}x)")
+    return weights
+
+
+def write_mode(name: str, boards, payouts, all_wins, all_duels, weights) -> list[str]:
     lines = []
-    for i, (board, payout, wins) in enumerate(zip(boards, payouts, all_wins), start=1):
+    for i, (board, payout, wins, duel) in enumerate(
+        zip(boards, payouts, all_wins, all_duels), start=1
+    ):
         lines.append(
             json.dumps(
-                {"id": i, "events": book_events(board, payout, wins), "payoutMultiplier": payout},
+                {
+                    "id": i,
+                    "events": book_events(board, payout, wins, duel),
+                    "payoutMultiplier": payout,
+                },
                 separators=(",", ":"),
             )
         )
@@ -233,75 +299,92 @@ def write_mode(name: str, boards, payouts, all_wins, weights) -> list[str]:
     return [books_name, lookup_name]
 
 
+def simulate(strips, rng, n) -> tuple[list, list, list, list]:
+    boards, payouts, wins_l, duels = [], [], [], []
+    for _ in range(n):
+        board = draw_board(strips, rng)
+        payout, wins, duel = eval_round(board)
+        boards.append(board)
+        payouts.append(payout)
+        wins_l.append(wins)
+        duels.append(duel)
+    return boards, payouts, wins_l, duels
+
+
 def main() -> None:
     rng = random.Random(SEED)
     base_strips = read_strips("BR0.csv")
+    boost_strips = read_strips("BST0.csv")
     bonus_strips = read_strips("BB0.csv")
     wincap_strips = read_strips("WCAP.csv")
 
-    # ---------- base mode ----------
-    boards: list[list[list[str]]] = []
-    payouts: list[int] = []
-    all_wins: list[list[dict]] = []
-
-    for _ in range(NUM_SIMS):
-        board = draw_board(base_strips, rng)
-        payout, wins = eval_lines(board)
-        boards.append(board)
-        payouts.append(payout)
-        all_wins.append(wins)
-
+    # ---------- base mode (VS on the middle reel, ~8.5% duel chance) ----------
+    boards, payouts, all_wins, all_duels = simulate(base_strips, rng, NUM_SIMS)
     for _ in range(NUM_WINCAP_SIMS):
         board = draw_board(wincap_strips, rng)
-        payout, wins = eval_lines(board)
+        payout, wins, duel = eval_round(board)
         assert payout == WINCAP_X100, f"WCAP board paid {payout}, expected {WINCAP_X100}"
         boards.append(board)
         payouts.append(payout)
         all_wins.append(wins)
+        all_duels.append(duel)
 
     n = len(payouts)
     hit = sum(1 for p in payouts if p > 0)
-    raw_rtp = sum(p / 100 for p in payouts) / n
-    print(f"base sims: {n} | natural hit rate: {hit / n:.2%} | raw RTP: {raw_rtp:.4%}")
+    duels_n = sum(1 for d in all_duels if d)
+    print(f"base sims: {n} | hit: {hit / n:.2%} | duel chance: {duels_n / n:.2%} | "
+          f"raw RTP: {sum(p / 100 for p in payouts) / n:.4%}")
     weights = solve_weights(payouts)
 
-    # ---------- bonus mode (rejection-sampled 20x..200x boards) ----------
-    b_boards: list[list[list[str]]] = []
+    # ---------- boost mode (BST0 reels, ~48% duel chance, cost 5x) ----------
+    s_boards, s_payouts, s_wins, s_duels = simulate(boost_strips, rng, NUM_BOOST_SIMS)
+    sn = len(s_payouts)
+    s_duels_n = sum(1 for d in s_duels if d)
+    print(f"boost sims: {sn} | hit: {sum(1 for p in s_payouts if p > 0) / sn:.2%} | "
+          f"duel chance: {s_duels_n / sn:.2%} | raw RTP/cost: {sum(p / 100 for p in s_payouts) / sn / BOOST_COST:.4%}")
+    s_weights = solve_mean_weights(s_payouts, BOOST_COST * TARGET_RTP, "boost")
+
+    # ---------- bonus mode (rejection-sampled 5x..200x boards) ----------
+    b_boards: list = []
     b_payouts: list[int] = []
-    b_wins: list[list[dict]] = []
+    b_wins: list = []
+    b_duels: list = []
     attempts = 0
     while len(b_payouts) < NUM_BONUS_SIMS:
         board = draw_board(bonus_strips, rng)
-        payout, wins = eval_lines(board)
+        payout, wins, duel = eval_round(board)
         attempts += 1
         if payout >= BONUS_MIN_X100:
             b_boards.append(board)
             b_payouts.append(payout)
             b_wins.append(wins)
+            b_duels.append(duel)
         if attempts > NUM_BONUS_SIMS * 5000:
             raise SystemExit("bonus rejection sampling too slow — enrich BB0.csv")
     for _ in range(NUM_BONUS_WINCAP_SIMS):
         board = draw_board(wincap_strips, rng)
-        payout, wins = eval_lines(board)
+        payout, wins, duel = eval_round(board)
         b_boards.append(board)
         b_payouts.append(payout)
         b_wins.append(wins)
+        b_duels.append(duel)
 
-    accept = NUM_BONUS_SIMS / attempts
-    print(f"bonus sims: {len(b_payouts)} | acceptance: {accept:.2%} | "
+    print(f"bonus sims: {len(b_payouts)} | acceptance: {NUM_BONUS_SIMS / attempts:.2%} | "
           f"natural mean: {sum(b_payouts) / len(b_payouts) / 100:.1f}x | max: {max(b_payouts) / 100:.0f}x")
     b_weights = solve_bonus_weights(b_payouts)
 
     # ---------- write ----------
     OUT.mkdir(exist_ok=True)
-    base_files = write_mode("base", boards, payouts, all_wins, weights)
-    bonus_files = write_mode("bonus", b_boards, b_payouts, b_wins, b_weights)
+    base_files = write_mode("base", boards, payouts, all_wins, all_duels, weights)
+    boost_files = write_mode("boost", s_boards, s_payouts, s_wins, s_duels, s_weights)
+    bonus_files = write_mode("bonus", b_boards, b_payouts, b_wins, b_duels, b_weights)
 
     with open(OUT / "index.json", "w") as f:
         json.dump(
             {
                 "modes": [
                     {"name": "base", "cost": 1.0, "events": base_files[0], "weights": base_files[1]},
+                    {"name": "boost", "cost": BOOST_COST, "events": boost_files[0], "weights": boost_files[1]},
                     {"name": "bonus", "cost": BONUS_COST, "events": bonus_files[0], "weights": bonus_files[1]},
                 ]
             },
@@ -309,7 +392,7 @@ def main() -> None:
             indent=4,
         )
 
-    for name in ["index.json", *base_files, *bonus_files]:
+    for name in ["index.json", *base_files, *boost_files, *bonus_files]:
         print(f"{name}: {os.path.getsize(OUT / name):,} B")
 
 

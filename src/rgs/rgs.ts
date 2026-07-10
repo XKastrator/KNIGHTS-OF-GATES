@@ -1,5 +1,5 @@
-import { COLS, ROWS, SYMBOL_INDEX } from '../config';
-import type { AuthResult, GameClient, RoundResult } from './client';
+import { COLS, DUEL_MULTIPLIER, ROWS, SYMBOL_INDEX } from '../config';
+import type { AuthResult, DuelResult, GameClient, RoundResult } from './client';
 import { urlParam } from './client';
 
 /** Stake Engine amounts are integers with 6 decimal places: $1.00 = 1_000_000. */
@@ -114,10 +114,13 @@ export class RgsClient implements GameClient {
         ? round.payout / API_MULTIPLIER
         : ((round.payoutMultiplier ?? 0) / 100) * bet;
 
+    const events = (round.state ?? round.events ?? []) as BookEvent[];
+    const grid = extractGrid(events);
     return {
       win: +win.toFixed(2),
       balance: this.toMajor(res.balance),
-      grid: extractGrid((round.state ?? round.events ?? []) as BookEvent[]),
+      grid,
+      duel: extractDuel(events, grid, bet),
     };
   }
 
@@ -129,7 +132,43 @@ export class RgsClient implements GameClient {
   }
 }
 
-type BookEvent = { type?: string; board?: unknown };
+type BookEvent = {
+  type?: string;
+  board?: unknown;
+  positions?: { reel: number; row: number }[];
+  award?: number;
+  multiplier?: number;
+};
+
+/**
+ * Duel info: prefer the explicit "duel" book event; otherwise reconstruct
+ * from VS symbols on the landed grid (award = blue's 2x per VS — must match
+ * the math package rule).
+ */
+function extractDuel(events: BookEvent[], grid: number[][] | null, bet: number): DuelResult | null {
+  const ev = events.find((e) => e?.type === 'duel');
+  if (ev && Array.isArray(ev.positions) && ev.positions.length > 0) {
+    return {
+      positions: ev.positions,
+      award: +(((ev.award ?? 0) / 100) * bet).toFixed(2),
+      multiplier: ev.multiplier ?? DUEL_MULTIPLIER,
+    };
+  }
+  if (!grid) return null;
+  const vsIndex = SYMBOL_INDEX['VS'];
+  const positions: { reel: number; row: number }[] = [];
+  grid.forEach((col, reel) =>
+    col.forEach((sym, row) => {
+      if (sym === vsIndex) positions.push({ reel, row });
+    }),
+  );
+  if (positions.length === 0) return null;
+  return {
+    positions,
+    award: +(positions.length * DUEL_MULTIPLIER * bet).toFixed(2),
+    multiplier: DUEL_MULTIPLIER,
+  };
+}
 
 /**
  * Pulls the landed board out of the round's book events (the math SDK "reveal"

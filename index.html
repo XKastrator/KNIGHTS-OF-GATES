@@ -38,7 +38,7 @@
     <!-- BET capsule + arrows -->
     <div class="capsule capsule-bet">
       <div class="stat">
-        <span class="stat-label">Bet</span>
+        <span id="bet-label" class="stat-label">Bet</span>
         <span id="bet-val" class="stat-amount stat-bet">$1.00</span>
       </div>
       <div class="bet-arrows">
@@ -112,14 +112,25 @@
         <svg viewBox="0 0 24 24" width="30" height="30"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <div class="bonus-grid">
-      <!-- placeholder cards — real bonus offers TBD -->
-      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn activate" data-bonus-card>Activate</button></div>
-      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn activate" data-bonus-card>Activate</button></div>
-      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn activate" data-bonus-card>Activate</button></div>
-      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn buy" data-bonus-card>Buy</button></div>
-      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn buy" data-bonus-card>Buy</button></div>
-      <div class="bonus-card"><div class="bonus-card-body"><span class="bonus-cost">$100.00</span></div><button class="bonus-card-btn buy" data-bonus-card>Buy</button></div>
+    <div class="bonus-grid bonus-grid-2">
+      <div class="bonus-card">
+        <div class="bonus-card-head">Duel Boost</div>
+        <div class="bonus-card-body">
+          <span class="bonus-desc">Dużo większa szansa na pojedynek <b>VS</b><br>(~48% na spin)</span>
+          <span class="bonus-cost" id="boost-cost">$5.00</span>
+          <span class="bonus-sub">koszt każdego spinu ×5</span>
+        </div>
+        <button id="btn-boost" class="bonus-card-btn activate">Aktywuj</button>
+      </div>
+      <div class="bonus-card">
+        <div class="bonus-card-head">Bonus Rycerza</div>
+        <div class="bonus-card-body">
+          <span class="bonus-desc">Gwarantowana wygrana<br><b>5× – 200×</b> stawki</span>
+          <span class="bonus-cost" id="bonus-cost">$30.00</span>
+          <span class="bonus-sub">jednorazowy zakup</span>
+        </div>
+        <button id="btn-bonus-buy" class="bonus-card-btn buy">Kup</button>
+      </div>
     </div>
   </div>
 

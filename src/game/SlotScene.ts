@@ -1,10 +1,11 @@
-import { Application, Container, Graphics, NineSliceSprite, Sprite, Texture } from 'pixi.js';
+import { Application, Container, Graphics, NineSliceSprite, Sprite, Text, TextStyle, Texture } from 'pixi.js';
 import { sound } from '../audio/sound';
-import { BOARD_H, BOARD_W, BOARD_X, BOARD_Y, DESIGN, FRAME_BORDER, PLATE_PAD } from '../config';
+import { BOARD_H, BOARD_W, BOARD_X, BOARD_Y, CELL, DESIGN, FRAME_BORDER, PLATE_PAD, STEP } from '../config';
 import { buildFallbackBackground } from '../fallback/background';
 import { buildFallbackFrame } from '../fallback/frame';
 import { buildFallbackLogo } from '../fallback/logo';
-import { Eases, tween } from '../util/tween';
+import type { DuelResult } from '../rgs/client';
+import { Eases, tween, wait } from '../util/tween';
 import { SlotMachine } from './SlotMachine';
 import { VsPanel } from './VsPanel';
 
@@ -146,62 +147,141 @@ export class SlotScene {
   }
 
   private async initVsPanel(): Promise<void> {
-    const boardCenterY = BOARD_Y + BOARD_H / 2;
-    const panel = new VsPanel(BOARD_H + 2 * (PLATE_PAD + FRAME_BORDER + 12));
+    // in-reel duel window: slightly taller than the board, opened on demand
+    const panel = new VsPanel(BOARD_H + 56);
     if (!(await panel.ready)) return; // video missing (e.g. offline dev) — skip
-    const rightEdge = BOARD_X + BOARD_W + PLATE_PAD + FRAME_BORDER + 24;
-    panel.view.position.set((rightEdge + DESIGN.width) / 2, boardCenterY);
-    // idle: below the dim layer; playDuel() raises it above for the fight
-    this.world.addChildAt(panel.view, this.world.getChildIndex(this.dim));
+    this.world.addChild(panel.view); // stays on top; visible = false while idle
     this.vsPanel = panel;
   }
 
   /**
-   * The duel: dim the table, run the 60fps clash (blue knight wins),
-   * shake on impact, spark burst, victory sting. Resolves when done.
+   * The in-reel duel sequence, opened out of the landed VS symbol:
+   * stand-off with the multipliers → slow-motion approach with a camera
+   * push-in → the single decisive blow (shake + sparks + flash) → blue
+   * knight's victory and the award — then the panel folds back into the reel.
    */
-  async playDuel(): Promise<void> {
-    const panel = this.vsPanel;
-    if (!panel || this.dueling) return;
+  async playDuelSequence(duel: DuelResult): Promise<void> {
+    if (this.dueling) return;
     this.dueling = true;
+    const panel = this.vsPanel;
+    const anchor = duel.positions[0] ?? { reel: 2, row: 2 };
+    const tileX = BOARD_X + (anchor.reel + 0.5) * STEP;
+    const tileY = BOARD_Y + (anchor.row + 0.5) * STEP;
+    const cx = BOARD_X + BOARD_W / 2;
+    const cy = BOARD_Y + BOARD_H / 2;
 
-    // panel above the dim for the duration of the fight
-    this.world.setChildIndex(panel.view, this.world.children.length - 1);
+    void tween({ from: this.dim.alpha, to: 0.55, duration: 280, onUpdate: (v) => (this.dim.alpha = v) });
 
-    sound.play('riser');
-    void tween({ from: this.dim.alpha, to: 0.5, duration: 220, onUpdate: (v) => (this.dim.alpha = v) });
-    void tween({
-      from: 1,
-      to: 1.05,
-      duration: 220,
-      ease: Eases.quadOut,
-      onUpdate: (v) => panel.view.scale.set(v),
-    });
+    if (panel) {
+      const openScale = CELL / panel.panelH;
+      this.world.setChildIndex(panel.view, this.world.children.length - 1);
+      panel.view.visible = true;
+      panel.view.alpha = 0;
+      panel.view.position.set(tileX, tileY);
+      panel.view.scale.set(openScale);
+      panel.seek(0);
+      panel.setZoom(1, 0.5);
 
-    // impact beat ~frame 30 of 60 @ 60fps
-    const clashAt = setTimeout(() => {
+      // 1) OPEN — the VS symbol unfolds into the duel window at board center
+      sound.play('riser');
+      sound.play('spin', { rate: 0.65, volume: 0.9 });
+      await Promise.all([
+        tween({ from: 0, to: 1, duration: 190, onUpdate: (v) => (panel.view.alpha = v) }),
+        tween({ from: tileX, to: cx, duration: 720, ease: Eases.backOut(0.6), onUpdate: (v) => (panel.view.x = v) }),
+        tween({ from: tileY, to: cy, duration: 720, ease: Eases.backOut(0.6), onUpdate: (v) => (panel.view.y = v) }),
+        tween({
+          from: openScale,
+          to: 1,
+          duration: 720,
+          ease: Eases.backOut(0.6),
+          onUpdate: (v) => panel.view.scale.set(v),
+        }),
+      ]);
+
+      // 2) STAND-OFF — knights present their multipliers, slow push-in
+      await tween({ from: 1, to: 1.1, duration: 1100, onUpdate: (v) => panel.setZoom(v, 0.5) });
+
+      // 3) APPROACH — slow motion, camera dives toward the coming clash
+      sound.play('riser', { rate: 1.18, volume: 0.85 });
+      await Promise.all([
+        panel.playRange(0, 0.42, 0.5),
+        tween({ from: 1.1, to: 1.55, duration: 840, ease: Eases.quadIn, onUpdate: (v) => panel.setZoom(v, 0.52) }),
+      ]);
+
+      // 4) THE BLOW — full speed, one decisive strike
       sound.play('clash');
-      this.shake(13, 380);
-      this.sparks(panel.view.x, panel.view.y);
-    }, 470);
+      this.shake(16, 420);
+      this.sparks(cx, cy);
+      this.whiteFlash();
+      await panel.playRange(0.42, 0.63, 1);
 
-    await panel.play();
-    clearTimeout(clashAt);
+      // 5) VICTORY — camera pulls back on the winning blue knight
+      sound.play('victory');
+      panel.flash(0.9);
+      void tween({ from: 0.9, to: 0, duration: 800, onUpdate: (v) => panel.flash(v) });
+      await Promise.all([
+        panel.playRange(0.63, 1, 0.85),
+        tween({ from: 1.55, to: 1.04, duration: 640, ease: Eases.cubicOut, onUpdate: (v) => panel.setZoom(v, 0.5) }),
+      ]);
 
-    sound.play('victory');
-    panel.flash(0.9);
-    void tween({ from: 0.9, to: 0, duration: 700, onUpdate: (v) => panel.flash(v) });
-    await tween({ from: this.dim.alpha, to: 0, duration: 320, onUpdate: (v) => (this.dim.alpha = v) });
-    await tween({ from: 1.05, to: 1, duration: 180, onUpdate: (v) => panel.view.scale.set(v) });
+      // 6) AWARD — floating multiplier + amount, hold the pose
+      this.showAward(cx, cy - panel.panelH * 0.26, duel);
+      sound.play('win', { volume: 0.9 });
+      await wait(1250);
 
-    // hold the victory pose for a bit, then ease back to the stand-off frame
-    setTimeout(() => {
-      panel.reset();
-      if (this.vsPanel) {
-        this.world.setChildIndex(this.vsPanel.view, this.world.getChildIndex(this.dim));
-      }
-    }, 4000);
+      // 7) CLOSE — fold back into the reel tile
+      await Promise.all([
+        tween({ from: 1, to: openScale, duration: 430, ease: Eases.quadIn, onUpdate: (v) => panel.view.scale.set(v) }),
+        tween({ from: cx, to: tileX, duration: 430, ease: Eases.quadIn, onUpdate: (v) => (panel.view.x = v) }),
+        tween({ from: cy, to: tileY, duration: 430, ease: Eases.quadIn, onUpdate: (v) => (panel.view.y = v) }),
+      ]);
+      await tween({ from: 1, to: 0, duration: 150, onUpdate: (v) => (panel.view.alpha = v) });
+      panel.view.visible = false;
+      panel.setZoom(1, 0.5);
+      panel.seek(0);
+    } else {
+      await wait(600); // video unavailable — brief pause, award still lands
+    }
+
+    await tween({ from: this.dim.alpha, to: 0, duration: 300, onUpdate: (v) => (this.dim.alpha = v) });
     this.dueling = false;
+  }
+
+  /** Quick white screen pop at the moment of impact. */
+  private whiteFlash(): void {
+    const flash = new Graphics();
+    flash.rect(-200, -200, DESIGN.width + 400, DESIGN.height + 400).fill(0xffffff);
+    flash.eventMode = 'none';
+    this.world.addChild(flash);
+    flash.alpha = 0.75;
+    void tween({ from: 0.75, to: 0, duration: 220, onUpdate: (v) => (flash.alpha = v) }).then(() =>
+      flash.destroy(),
+    );
+  }
+
+  /** "2x  +$X" floating up from the duel window. */
+  private showAward(x: number, y: number, duel: DuelResult): void {
+    const label = `${duel.multiplier}x  +$${duel.award.toFixed(2)}`;
+    const text = new Text({
+      text: label,
+      style: new TextStyle({
+        fontFamily: ['Cinzel', 'Georgia', 'serif'],
+        fontWeight: '900',
+        fontSize: 64,
+        fill: 0xffe9a8,
+        stroke: { color: 0x4c380c, width: 8 },
+        dropShadow: { color: 0x000000, blur: 8, distance: 5, angle: Math.PI / 2.5, alpha: 0.8 },
+      }),
+    });
+    text.anchor.set(0.5);
+    text.position.set(x, y);
+    text.scale.set(0.4);
+    this.world.addChild(text);
+    void tween({ from: 0.4, to: 1, duration: 260, ease: Eases.backOut(1.6), onUpdate: (v) => text.scale.set(v) });
+    void tween({ from: y, to: y - 90, duration: 1500, ease: Eases.quadOut, onUpdate: (v) => (text.y = v) });
+    void tween({ from: 1, to: 0, duration: 1500, ease: Eases.quadIn, onUpdate: (v) => (text.alpha = v) }).then(
+      () => text.destroy(),
+    );
   }
 
   /** Decaying random world offset — impact feedback. */

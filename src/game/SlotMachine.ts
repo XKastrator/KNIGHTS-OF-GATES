@@ -1,6 +1,6 @@
 import { Container, Graphics, Texture, Ticker } from 'pixi.js';
 import { sound } from '../audio/sound';
-import { BOARD_H, BOARD_W, COLS, ROWS, STEP, SYMBOLS } from '../config';
+import { BOARD_H, BOARD_W, COLS, REEL_FILL_COUNT, ROWS, STEP } from '../config';
 import { Reel } from './Reel';
 
 /** The 5×5 reel set behind a rectangular mask. (0,0) = top-left of the symbol window. */
@@ -25,7 +25,7 @@ export class SlotMachine {
   }
 
   private randomColumn(): number[] {
-    return Array.from({ length: ROWS }, () => Math.floor(Math.random() * SYMBOLS.length));
+    return Array.from({ length: ROWS }, () => Math.floor(Math.random() * REEL_FILL_COUNT));
   }
 
   /**

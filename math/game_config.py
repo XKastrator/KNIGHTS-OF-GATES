@@ -70,7 +70,10 @@ class GameConfig(Config):
         self.paytable = self.convert_range_table(pay_group)
 
         self.include_padding = True
-        self.special_symbols = {"wild": ["W"], "scatter": [], "multiplier": []}
+        # VS = duel trigger (blue knight pays 2x bet per landed VS — the duel
+        # award needs a custom executable when this package runs in the SDK;
+        # generate_publish.py already implements the rule for the RGS files).
+        self.special_symbols = {"wild": ["W"], "scatter": ["VS"], "multiplier": []}
 
         # No free-spin mode yet (VS feature will replace it).
         self.freespin_triggers = {self.basegame_type: {}, self.freegame_type: {}}
@@ -91,8 +94,8 @@ class GameConfig(Config):
             10: [1, 2, 3, 2, 1],
         }
 
-        # Reel strips
-        reels = {"BR0": "BR0.csv", "WCAP": "WCAP.csv"}
+        # Reel strips (BST0 = "Duel Boost" set with far more VS stops)
+        reels = {"BR0": "BR0.csv", "BST0": "BST0.csv", "WCAP": "WCAP.csv"}
         self.reels = {}
         for reel_name, file_name in reels.items():
             self.reels[reel_name] = self.read_reels_csv(os.path.join(self.reels_path, file_name))
@@ -135,6 +138,36 @@ class GameConfig(Config):
                         quota=0.599,
                         conditions={
                             "reel_weights": {self.basegame_type: {"BR0": 1}},
+                            "force_wincap": False,
+                            "force_freegame": False,
+                        },
+                    ),
+                ],
+            ),
+            BetMode(
+                name="boost",
+                cost=5.0,
+                rtp=self.rtp,
+                max_win=self.wincap,
+                auto_close_disabled=False,
+                is_feature=True,
+                is_buybonus=False,
+                distributions=[
+                    Distribution(
+                        criteria="wincap",
+                        quota=0.001,
+                        win_criteria=self.wincap,
+                        conditions={
+                            "reel_weights": {self.basegame_type: {"WCAP": 1}},
+                            "force_wincap": True,
+                            "force_freegame": False,
+                        },
+                    ),
+                    Distribution(
+                        criteria="basegame",
+                        quota=0.999,
+                        conditions={
+                            "reel_weights": {self.basegame_type: {"BST0": 1}},
                             "force_wincap": False,
                             "force_freegame": False,
                         },

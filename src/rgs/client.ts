@@ -14,6 +14,15 @@ export interface AuthResult {
   defaultBet: number | null;
 }
 
+export interface DuelResult {
+  /** landed VS symbol positions */
+  positions: { reel: number; row: number }[];
+  /** total duel award in major currency units (already included in `win`) */
+  award: number;
+  /** winning knight's multiplier (blue = 2x for now) */
+  multiplier: number;
+}
+
 export interface RoundResult {
   /** total round win in major currency units */
   win: number;
@@ -21,6 +30,8 @@ export interface RoundResult {
   balance: number | null;
   /** landed board mapped to SYMBOLS indices, grid[col][row]; null = pick random */
   grid: number[][] | null;
+  /** knight duel triggered by VS symbols, if any */
+  duel: DuelResult | null;
 }
 
 export interface GameClient {

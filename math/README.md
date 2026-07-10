@@ -2,9 +2,9 @@
 
 Paczka gry pod [StakeEngine/math-sdk](https://github.com/StakeEngine/math-sdk).
 **Placeholder math**: plansza 5×5, 10 stałych linii, wild (W) z substytucją,
-tylko tryb `base`. Mechanika **symbol vs symbol** (pojedynek) dojdzie jako
-osobny feature/tryb, gdy dostarczysz jej spec — wtedy zmieniamy `gamestate.py`
-i paytable.
+symbol **VS** (pojedynek: 2× stawki za sztukę) i trzy tryby: `base`, `boost`
+(więcej VS), `bonus` (gwarantowana wygrana). Pełna mechanika pojedynku
+(czerwony vs niebieski wg tabeli wag) wejdzie po dostarczeniu speca.
 
 ## Symbole
 
@@ -17,6 +17,7 @@ i paytable.
 | H5  | Brama                 |
 | L1–L5 | A, K, Q, J, 10      |
 | W   | Wild (substytucja)    |
+| VS  | Pojedynek (2× za sztukę, nie płaci na liniach) |
 
 Kody muszą się zgadzać z `SYMBOLS` w `src/config.ts` frontendu — i zgadzają się.
 
@@ -30,19 +31,24 @@ pip install zstandard
 python3 math/generate_publish.py
 ```
 
-Powstaje `math/publish/` (dwa tryby):
+Powstaje `math/publish/` (trzy tryby):
 
-- `index.json` — manifest: `base` (koszt 1×) + `bonus` (koszt 30×)
-- `books_base.jsonl.zst` + `lookUpTable_base_0.csv` — 20 020 rund,
-  RTP 97.00%, hit rate 27%
-- `books_bonus.jsonl.zst` + `lookUpTable_bonus_0.csv` — 4 015 rund bonus buy,
-  gwarantowane 5×–200×, RTP 97% kosztu (koszt 30× — niski, bo wincap to 200×;
-  do przebalansowania przy mechanice VS)
+- `index.json` — manifest: `base` (1×) + `boost` (5×) + `bonus` (30×)
+- **base** — VS na środkowym bębnie (~8,5% na pojedynek), RTP 97.00%, hit 27%
+- **boost** ("Duel Boost") — reels BST0 z dużą liczbą VS (~47% na pojedynek),
+  koszt 5× stawki, RTP 97% kosztu
+- **bonus** — gwarantowane 5×–200×, koszt 30×, RTP 97% kosztu
+
+Mechanika VS (placeholder do czasu pełnego speca): każdy wylosowany symbol VS
+wypłaca 2× stawki (mnożnik zwycięskiego niebieskiego rycerza) i emituje event
+`duel` w books (`positions/winner/multiplier/award`), który frontend odtwarza
+jako animowany pojedynek w bębnie.
 
 **Wgrywanie w ACP:** wszystkie pliki z `math/publish/` muszą leżeć w sekcji
 Math **na najwyższym poziomie** (żadnego folderu `math/` ani `publish/`
 w ścieżce — publikator szuka `index.json` w korzeniu). Usuń z sekcji Math
-wgrane wcześniej pliki źródłowe i wgraj tylko tę piątkę, potem Publish.
+wgrane wcześniej pliki źródłowe i wgraj tylko ten komplet (7 plików), potem
+Publish.
 
 Reguły w `generate_publish.py` (paytable/linie/reels) muszą być zsynchronizowane
 z `game_config.py` — docelowo i tak zastąpi je pełny run math-sdk (poniżej).

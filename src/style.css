@@ -197,6 +197,18 @@ button { font-family: var(--font); }
   width: 100%; max-width: 900px;
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
 }
+.bonus-grid-2 { grid-template-columns: repeat(2, 1fr); max-width: 680px; }
+.bonus-card-head {
+  padding: 16px 16px 0; text-align: center;
+  font-size: 18px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #fff;
+}
+.bonus-card-body { flex-direction: column; gap: 10px; padding: 12px; text-align: center; }
+.bonus-desc { color: #c9ced6; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.bonus-desc b { color: var(--accent); }
+.bonus-sub { color: var(--label); font-size: 12px; }
+.bonus-card-btn.activate.on { background: var(--accent); color: #241a04; }
+.stat-bet.boost-on { color: var(--accent); }
 .bonus-card {
   min-height: 280px; border-radius: 16px; background: #14181f;
   border: 1px solid rgba(255, 255, 255, 0.07);

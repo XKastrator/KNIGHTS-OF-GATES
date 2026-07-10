@@ -1,5 +1,5 @@
 import { sound } from '../audio/sound';
-import { BONUS_COST_MULT } from '../config';
+import { BONUS_COST_MULT, BOOST_COST_MULT, DUEL_MULTIPLIER } from '../config';
 import { SlotScene } from '../game/SlotScene';
 import type { GameClient } from '../rgs/client';
 import { bet, bus, setBetSteps, state, stepBet } from '../state';
@@ -25,6 +25,8 @@ export function initBar(scene: SlotScene, client: GameClient): void {
   const balanceVal = $('#balance-val');
   const winVal = $('#win-val');
   const betVal = $('#bet-val');
+  const betLabel = $('#bet-label');
+  const btnBoost = $<HTMLButtonElement>('#btn-boost');
   const bonusBetVal = $('#bonus-bet-val');
   const btnSpin = $<HTMLButtonElement>('#btn-spin');
   const btnTurbo = $('#btn-turbo');
@@ -45,9 +47,15 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     balanceVal.textContent = fmt(state.balance);
     winVal.textContent = fmt(state.win);
     winVal.classList.toggle('winning', state.win > 0);
-    betVal.textContent = fmt(bet());
+    betLabel.textContent = state.boostActive ? `Bet • Boost ×${BOOST_COST_MULT}` : 'Bet';
+    betVal.textContent = fmt(bet() * (state.boostActive ? BOOST_COST_MULT : 1));
+    betVal.classList.toggle('boost-on', state.boostActive);
     bonusBetVal.textContent = fmt(bet());
-    document.querySelectorAll('.bonus-cost').forEach((el) => (el.textContent = fmt(bet() * BONUS_COST_MULT)));
+    $('#boost-cost').textContent = fmt(bet() * BOOST_COST_MULT);
+    $('#bonus-cost').textContent = fmt(bet() * BONUS_COST_MULT);
+    btnBoost.textContent = state.boostActive ? 'Wyłącz' : 'Aktywuj';
+    btnBoost.classList.toggle('on', state.boostActive);
+    btnBonus.classList.toggle('active', state.boostActive);
     bar.classList.toggle('turbo', state.turbo);
     btnTurbo.classList.toggle('active', state.turbo);
     btnAuto.classList.toggle('active', state.autoRemaining > 0);
@@ -75,11 +83,12 @@ export function initBar(scene: SlotScene, client: GameClient): void {
   }
 
   /** One full round: debit via client → spin reels onto the result → credit. */
-  async function doSpin(mode: 'base' | 'bonus' = 'base'): Promise<void> {
+  async function doSpin(kind: 'base' | 'bonus' = 'base'): Promise<void> {
     if (state.spinning) return;
     const stake = bet();
-    const cost = mode === 'bonus' ? stake * BONUS_COST_MULT : stake;
-    if (state.balance < cost) {
+    const mode = kind === 'bonus' ? 'bonus' : state.boostActive ? 'boost' : 'base';
+    const costMult = mode === 'bonus' ? BONUS_COST_MULT : mode === 'boost' ? BOOST_COST_MULT : 1;
+    if (state.balance < stake * costMult) {
       bus.emit('deny');
       stopAuto();
       bus.emit('change');
@@ -104,11 +113,13 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     }
     if (round.balance !== null) state.balance = round.balance;
 
-    // bought bonus opens with the knight duel (blue wins -> the round pays)
-    if (mode === 'bonus') await scene.playDuel();
-
     sound.play('spin', { volume: 0.7 });
     await scene.machine.spin(state.turbo, round.grid);
+
+    // landed VS symbols open the in-reel duel before the win is presented
+    if (round.duel && round.duel.positions.length > 0) {
+      await scene.playDuelSequence(round.duel);
+    }
 
     state.spinning = false;
     state.win = round.win;
@@ -119,7 +130,9 @@ export function initBar(scene: SlotScene, client: GameClient): void {
       } catch (err) {
         console.warn('end-round failed:', err);
       }
-      sound.play(round.win / stake >= 10 ? 'bigwin' : 'win');
+      // the duel sequence already scored its own award sound
+      const lineWin = round.win - (round.duel?.award ?? 0);
+      if (lineWin > 0) sound.play(round.win / stake >= 10 ? 'bigwin' : 'win');
       void scene.flashWin();
     }
     bus.emit('change');
@@ -176,15 +189,16 @@ export function initBar(scene: SlotScene, client: GameClient): void {
       void runAuto();
     }),
   );
-  // bonus cards: all six run the "bonus" mode for now (30× bet, 5x..200x);
-  // per-card offers arrive with the VS mechanic
-  document.querySelectorAll<HTMLButtonElement>('[data-bonus-card]').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      if (state.spinning) return;
-      closeAll();
-      void doSpin('bonus');
-    }),
-  );
+  // bonus modal offers
+  btnBoost.addEventListener('click', () => {
+    state.boostActive = !state.boostActive;
+    bus.emit('change');
+  });
+  $('#btn-bonus-buy').addEventListener('click', () => {
+    if (state.spinning) return;
+    closeAll();
+    void doSpin('bonus');
+  });
 
   // sound toggle in the settings modal
   const toggleSound = $('#toggle-sound');
@@ -206,7 +220,11 @@ export function initBar(scene: SlotScene, client: GameClient): void {
       e.preventDefault();
       void doSpin();
     } else if (e.code === 'KeyV' && !state.spinning) {
-      void scene.playDuel();
+      void scene.playDuelSequence({
+        positions: [{ reel: 2, row: 2 }],
+        award: +(bet() * DUEL_MULTIPLIER).toFixed(2),
+        multiplier: DUEL_MULTIPLIER,
+      });
     }
   });
 

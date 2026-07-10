@@ -67,7 +67,10 @@ jednym ruchem (kolejność wg `SYMBOLS` w `src/config.ts`, kody zgodne z math).
 - [x] Klient RGS Stake Engine + tryb demo
 - [x] Math publish: tryb `base` (RTP 97%, hit 27%) + `bonus` 30× (5×–200×)
 - [x] Pakiet math SDK (placeholder: 10 linii, wild)
-- [x] Panel pojedynku VS (wideo 60 fps) + SFX + wstrząs/iskry
-- [ ] Mechanika **symbol vs symbol** w math (czekam na spec/spreadsheet wypłat)
+- [x] Symbol **VS** na bębnie → pojedynek otwierany w reelu (otwarcie →
+      mnożniki → slow-mo → cios → wiktoria + nagroda 2×/VS), wideo 60 fps
+- [x] Tryb **Duel Boost** (5×, ~48% szansy na pojedynek) + **Bonus Rycerza** (30×)
+- [x] SFX + wstrząs/iskry/flash
+- [ ] Pełny spec pojedynku (czerwony vs niebieski, tabela wag/mnożników)
 - [ ] Docelowe grafiki symboli i ramki
 - [ ] Muzyka w tle / studyjne SFX

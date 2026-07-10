@@ -22,9 +22,11 @@ export const FRAME_BORDER = 38; // fallback frame band thickness
 export const BET_STEPS = [0.1, 0.2, 0.4, 0.6, 1, 2, 4, 6, 10, 20, 40, 60, 100];
 export const DEFAULT_BET_INDEX = 4; // $1.00
 export const START_BALANCE = 1000;
-// Bonus buy = 30× bet — matches the "bonus" mode cost in math/publish/index.json.
-// (Capped low because wincap is 200x; rebalance together with the VS mechanic.)
-export const BONUS_COST_MULT = 30;
+// Mode costs — must match math/publish/index.json.
+export const BONUS_COST_MULT = 30; // guaranteed 5x..200x round
+export const BOOST_COST_MULT = 5; // "Duel Boost": ~48% duel chance per spin
+/** blue knight's multiplier — award per landed VS symbol (placeholder rule) */
+export const DUEL_MULTIPLIER = 2;
 
 /** Demo win model (until the real VS mechanic + paytable arrive). */
 export const WIN_CHANCE = 0.42;
@@ -34,7 +36,7 @@ export interface SymbolDef {
   /** math-SDK symbol code — must match the reels/paytable in /math */
   code: string;
   /** placeholder art variant */
-  art: 'sword' | 'shield' | 'helm' | 'crown' | 'gate' | 'wild' | 'letter';
+  art: 'sword' | 'shield' | 'helm' | 'crown' | 'gate' | 'wild' | 'letter' | 'vs';
   /** letter glyph (letter art only) */
   text?: string;
   /** accent color used for glyph / glow */
@@ -58,7 +60,13 @@ export const SYMBOLS: SymbolDef[] = [
   { code: 'L4', art: 'letter', text: 'J', color: 0x3f7fb0, textColor: 0xffffff },
   { code: 'L5', art: 'letter', text: '10', color: 0x4a8a5a, textColor: 0xffffff },
   { code: 'W', art: 'wild', color: 0xf5c542, textColor: 0x241a04 },
+  // VS must stay LAST — random reel fills draw from the first REEL_FILL_COUNT
+  // entries so the duel symbol only appears when the book/demo places it.
+  { code: 'VS', art: 'vs', color: 0xf5c542 },
 ];
+
+/** number of symbols used for random reel fills (excludes the special VS) */
+export const REEL_FILL_COUNT = SYMBOLS.length - 1;
 
 /** math code → SYMBOLS index (for mapping RGS book boards onto textures) */
 export const SYMBOL_INDEX: Record<string, number> = Object.fromEntries(SYMBOLS.map((s, i) => [s.code, i]));

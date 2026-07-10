@@ -37,6 +37,13 @@ TARGET_HIT_RATE = 0.27  # weighted share of winning rounds
 WINCAP_X100 = 20_000  # 200x
 BASE_WEIGHT = 100_000
 
+# bonus buy: guaranteed 5x..wincap, cost 30x bet, RTP 97% of cost
+# (cost is capped this low because wincap is 200x — rebalance with the VS mechanic)
+BONUS_COST = 30.0
+BONUS_MIN_X100 = 500
+NUM_BONUS_SIMS = 4_000
+NUM_BONUS_WINCAP_SIMS = 15
+
 ROWS = 5
 REELS = 5
 WILD = "W"
@@ -179,11 +186,60 @@ def solve_weights(payouts_x100: list[int]) -> list[int]:
     return weights
 
 
+def solve_bonus_weights(payouts_x100: list[int]) -> list[int]:
+    """
+    Bonus lookup weights: every round pays >= 20x; anchor the sub-mean bucket,
+    solve the top bucket so E[payout] == BONUS_COST * TARGET_RTP (97x).
+    """
+    t = BONUS_COST * TARGET_RTP  # target mean, in multiplier units
+    a = BASE_WEIGHT
+    low = [p for p in payouts_x100 if p / 100 < t]
+    high = [p for p in payouts_x100 if p / 100 >= t]
+    s_low = sum(p / 100 for p in low)
+    s_high = sum(p / 100 for p in high)
+    n_low, n_high = len(low), len(high)
+    if not high or s_high / n_high <= t:
+        raise SystemExit("bonus sims lack a top-end — enrich BB0.csv / quotas")
+
+    x = a * (t * n_low - s_low) / (s_high - t * n_high)
+    if x < 1:
+        raise SystemExit(f"bonus weight solve failed (x={x:.3f})")
+    high_weight = round(x)
+
+    weights = [a if p / 100 < t else high_weight for p in payouts_x100]
+    achieved = sum(w * p / 100 for w, p in zip(weights, payouts_x100)) / sum(weights)
+    print(f"bonus weights — low: {a}, high: {high_weight}")
+    print(f"bonus achieved RTP: {achieved / BONUS_COST:.4%} (mean {achieved:.2f}x, target {t:.0f}x)")
+    return weights
+
+
+def write_mode(name: str, boards, payouts, all_wins, weights) -> list[str]:
+    lines = []
+    for i, (board, payout, wins) in enumerate(zip(boards, payouts, all_wins), start=1):
+        lines.append(
+            json.dumps(
+                {"id": i, "events": book_events(board, payout, wins), "payoutMultiplier": payout},
+                separators=(",", ":"),
+            )
+        )
+    raw = ("\n".join(lines) + "\n").encode()
+    books_name = f"books_{name}.jsonl.zst"
+    lookup_name = f"lookUpTable_{name}_0.csv"
+    with open(OUT / books_name, "wb") as f:
+        f.write(zstandard.ZstdCompressor(level=10).compress(raw))
+    with open(OUT / lookup_name, "w", newline="") as f:
+        for i, (w, p) in enumerate(zip(weights, payouts), start=1):
+            f.write(f"{i},{w},{p}\n")
+    return [books_name, lookup_name]
+
+
 def main() -> None:
     rng = random.Random(SEED)
     base_strips = read_strips("BR0.csv")
+    bonus_strips = read_strips("BB0.csv")
     wincap_strips = read_strips("WCAP.csv")
 
+    # ---------- base mode ----------
     boards: list[list[list[str]]] = []
     payouts: list[int] = []
     all_wins: list[list[dict]] = []
@@ -206,46 +262,54 @@ def main() -> None:
     n = len(payouts)
     hit = sum(1 for p in payouts if p > 0)
     raw_rtp = sum(p / 100 for p in payouts) / n
-    print(f"sims: {n} | natural hit rate: {hit / n:.2%} | raw RTP: {raw_rtp:.4%}")
-    print(f"max win: {max(payouts) / 100:.0f}x | wincap sims: {NUM_WINCAP_SIMS}")
-
+    print(f"base sims: {n} | natural hit rate: {hit / n:.2%} | raw RTP: {raw_rtp:.4%}")
     weights = solve_weights(payouts)
 
+    # ---------- bonus mode (rejection-sampled 20x..200x boards) ----------
+    b_boards: list[list[list[str]]] = []
+    b_payouts: list[int] = []
+    b_wins: list[list[dict]] = []
+    attempts = 0
+    while len(b_payouts) < NUM_BONUS_SIMS:
+        board = draw_board(bonus_strips, rng)
+        payout, wins = eval_lines(board)
+        attempts += 1
+        if payout >= BONUS_MIN_X100:
+            b_boards.append(board)
+            b_payouts.append(payout)
+            b_wins.append(wins)
+        if attempts > NUM_BONUS_SIMS * 5000:
+            raise SystemExit("bonus rejection sampling too slow — enrich BB0.csv")
+    for _ in range(NUM_BONUS_WINCAP_SIMS):
+        board = draw_board(wincap_strips, rng)
+        payout, wins = eval_lines(board)
+        b_boards.append(board)
+        b_payouts.append(payout)
+        b_wins.append(wins)
+
+    accept = NUM_BONUS_SIMS / attempts
+    print(f"bonus sims: {len(b_payouts)} | acceptance: {accept:.2%} | "
+          f"natural mean: {sum(b_payouts) / len(b_payouts) / 100:.1f}x | max: {max(b_payouts) / 100:.0f}x")
+    b_weights = solve_bonus_weights(b_payouts)
+
+    # ---------- write ----------
     OUT.mkdir(exist_ok=True)
-
-    lines = []
-    for i, (board, payout, wins) in enumerate(zip(boards, payouts, all_wins), start=1):
-        lines.append(
-            json.dumps(
-                {"id": i, "events": book_events(board, payout, wins), "payoutMultiplier": payout},
-                separators=(",", ":"),
-            )
-        )
-    raw = ("\n".join(lines) + "\n").encode()
-    with open(OUT / "books_base.jsonl.zst", "wb") as f:
-        f.write(zstandard.ZstdCompressor(level=10).compress(raw))
-
-    with open(OUT / "lookUpTable_base_0.csv", "w", newline="") as f:
-        for i, (w, p) in enumerate(zip(weights, payouts), start=1):
-            f.write(f"{i},{w},{p}\n")
+    base_files = write_mode("base", boards, payouts, all_wins, weights)
+    bonus_files = write_mode("bonus", b_boards, b_payouts, b_wins, b_weights)
 
     with open(OUT / "index.json", "w") as f:
         json.dump(
             {
                 "modes": [
-                    {
-                        "name": "base",
-                        "cost": 1.0,
-                        "events": "books_base.jsonl.zst",
-                        "weights": "lookUpTable_base_0.csv",
-                    }
+                    {"name": "base", "cost": 1.0, "events": base_files[0], "weights": base_files[1]},
+                    {"name": "bonus", "cost": BONUS_COST, "events": bonus_files[0], "weights": bonus_files[1]},
                 ]
             },
             f,
             indent=4,
         )
 
-    for name in ("index.json", "books_base.jsonl.zst", "lookUpTable_base_0.csv"):
+    for name in ["index.json", *base_files, *bonus_files]:
         print(f"{name}: {os.path.getsize(OUT / name):,} B")
 
 

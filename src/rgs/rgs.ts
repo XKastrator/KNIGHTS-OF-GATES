@@ -71,7 +71,26 @@ export class RgsClient implements GameClient {
     };
   }
 
-  async play(bet: number, mode = 'BASE'): Promise<RoundResult> {
+  /** Remembers which mode-name casing the RGS accepted ("base" vs "BASE"). */
+  private modeCasing: 'as-is' | 'upper' = 'as-is';
+
+  async play(bet: number, mode = 'base'): Promise<RoundResult> {
+    try {
+      return await this.playRaw(bet, this.modeCasing === 'upper' ? mode.toUpperCase() : mode);
+    } catch (err) {
+      // Mode-name casing differs between docs examples and index.json — on a
+      // validation error, retry once with the other casing and remember it.
+      if (err instanceof Error && err.message.startsWith('ERR_VAL')) {
+        const flipped = this.modeCasing === 'upper' ? 'as-is' : 'upper';
+        const result = await this.playRaw(bet, flipped === 'upper' ? mode.toUpperCase() : mode);
+        this.modeCasing = flipped;
+        return result;
+      }
+      throw err;
+    }
+  }
+
+  private async playRaw(bet: number, mode: string): Promise<RoundResult> {
     const res = await this.post<{
       balance?: RgsBalance;
       round?: {

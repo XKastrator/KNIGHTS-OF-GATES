@@ -207,3 +207,33 @@ button { font-family: var(--font); }
 @media (max-height: 700px) {
   .bonus-card { min-height: 190px; }
 }
+
+/* ============== NARROW-VIEWPORT SAFETY (iframe / small windows) ============== */
+.capsule-main { overflow: hidden; }
+
+@media (max-width: 1200px) {
+  .bar { gap: 8px; padding: 10px 10px 12px; }
+  .circle-btn { width: 48px; height: 48px; border-width: 2px; }
+  .spin-btn { width: 72px; height: 72px; border-width: 4px; }
+  .bonus-btn { width: 62px; height: 62px; }
+  .bonus-label { font-size: 10px; }
+  .capsule { height: 56px; border-radius: 13px; }
+  .capsule-main { gap: 10px; padding: 0 14px 0 8px; }
+  .capsule-bet .stat { padding: 0 8px 0 12px; }
+  .stat-amount { font-size: 20px; }
+  .stat-win, .stat-bet { font-size: 17px; }
+}
+
+@media (max-width: 820px) {
+  .bar { gap: 6px; }
+  .circle-btn { width: 42px; height: 42px; }
+  .circle-btn svg { width: 20px; height: 20px; }
+  .spin-btn { width: 60px; height: 60px; }
+  .spin-btn svg { width: 30px; height: 30px; }
+  .bonus-btn { width: 54px; height: 54px; }
+  .flat-btn { width: 30px; }
+  .stat-label { font-size: 9px; letter-spacing: 0.1em; }
+  .stat-amount { font-size: 16px; }
+  .stat-win, .stat-bet { font-size: 14px; }
+  .auto-count { font-size: 15px; }
+}

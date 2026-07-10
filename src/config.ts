@@ -22,7 +22,9 @@ export const FRAME_BORDER = 38; // fallback frame band thickness
 export const BET_STEPS = [0.1, 0.2, 0.4, 0.6, 1, 2, 4, 6, 10, 20, 40, 60, 100];
 export const DEFAULT_BET_INDEX = 4; // $1.00
 export const START_BALANCE = 1000;
-export const BONUS_COST_MULT = 100; // bonus buy = 100× bet (placeholder economy)
+// Bonus buy = 30× bet — matches the "bonus" mode cost in math/publish/index.json.
+// (Capped low because wincap is 200x; rebalance together with the VS mechanic.)
+export const BONUS_COST_MULT = 30;
 
 /** Demo win model (until the real VS mechanic + paytable arrive). */
 export const WIN_CHANCE = 0.42;

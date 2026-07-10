@@ -40,10 +40,6 @@ export function initBar(scene: SlotScene, client: GameClient): void {
 
   let autoLeft = 0;
 
-  // The math package currently ships the BASE mode only, so bonus buy is a
-  // demo-mode toy until a real bonus mode exists in /math.
-  if (client.kind === 'rgs') btnBonus.classList.add('hidden');
-
   function render(): void {
     balanceVal.textContent = fmt(state.balance);
     winVal.textContent = fmt(state.win);
@@ -78,10 +74,11 @@ export function initBar(scene: SlotScene, client: GameClient): void {
   }
 
   /** One full round: debit via client → spin reels onto the result → credit. */
-  async function doSpin(mode: 'BASE' | 'BONUS' = 'BASE'): Promise<void> {
+  async function doSpin(mode: 'base' | 'bonus' = 'base'): Promise<void> {
     if (state.spinning) return;
     const stake = bet();
-    if (state.balance < stake && client.kind === 'demo') {
+    const cost = mode === 'bonus' ? stake * BONUS_COST_MULT : stake;
+    if (state.balance < cost) {
       bus.emit('deny');
       stopAuto();
       bus.emit('change');
@@ -173,18 +170,13 @@ export function initBar(scene: SlotScene, client: GameClient): void {
       void runAuto();
     }),
   );
-  // bonus cards: demo-only placeholder — charge 100× bet, run one boosted spin
+  // bonus cards: all six run the "bonus" mode for now (30× bet, 5x..200x);
+  // per-card offers arrive with the VS mechanic
   document.querySelectorAll<HTMLButtonElement>('[data-bonus-card]').forEach((btn) =>
     btn.addEventListener('click', () => {
       if (state.spinning) return;
-      const cost = +(bet() * (BONUS_COST_MULT - 1)).toFixed(2); // doSpin debits one bet itself
-      if (state.balance < cost + bet()) {
-        bus.emit('deny');
-        return;
-      }
-      state.balance = +(state.balance - cost).toFixed(2);
       closeAll();
-      void doSpin('BONUS');
+      void doSpin('bonus');
     }),
   );
 

@@ -49,9 +49,10 @@ jednym ruchem (kolejność wg `SYMBOLS` w `src/config.ts`, kody zgodne z math).
 ## Status / roadmapa
 
 - [x] Scena: tło + logo + ramka + plansza 5×5 + dolny pasek UI
-- [x] Spin bębnów (stagger, pullback, bounce), turbo, autoplay, bonus-buy (demo)
+- [x] Spin bębnów (stagger, pullback, bounce), turbo, autoplay
 - [x] Klient RGS Stake Engine + tryb demo
-- [x] Pakiet math SDK (placeholder: 10 linii, wild, base mode)
+- [x] Math publish: tryb `base` (RTP 97%, hit 27%) + `bonus` 30× (5×–200×)
+- [x] Pakiet math SDK (placeholder: 10 linii, wild)
 - [ ] Mechanika **symbol vs symbol** (czekam na spreadsheet) + animacje
 - [ ] Docelowe grafiki symboli i przycisków
 - [ ] Dźwięk

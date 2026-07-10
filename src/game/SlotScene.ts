@@ -91,7 +91,20 @@ export class SlotScene {
     this.winGlow.alpha = 0;
     this.world.addChild(this.winGlow);
 
-    window.addEventListener('resize', () => this.layout());
+    // Re-layout whenever the renderer's size actually changes. A plain window
+    // "resize" listener fires before Pixi applies its own resize, which left
+    // the scene scaled for stale dimensions.
+    let lastW = 0;
+    let lastH = 0;
+    app.ticker.add(() => {
+      const w = app.renderer.width;
+      const h = app.renderer.height;
+      if (w !== lastW || h !== lastH) {
+        lastW = w;
+        lastH = h;
+        this.layout();
+      }
+    });
     this.layout();
   }
 

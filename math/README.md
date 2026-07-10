@@ -30,16 +30,19 @@ pip install zstandard
 python3 math/generate_publish.py
 ```
 
-Powstaje `math/publish/`:
+Powstaje `math/publish/` (dwa tryby):
 
-- `index.json`
-- `books_base.jsonl.zst` (20 020 rund, payoutMultiplier ×100)
-- `lookUpTable_base_0.csv` (wagi dostrojone: RTP 97.00%, hit rate 27%)
+- `index.json` — manifest: `base` (koszt 1×) + `bonus` (koszt 30×)
+- `books_base.jsonl.zst` + `lookUpTable_base_0.csv` — 20 020 rund,
+  RTP 97.00%, hit rate 27%
+- `books_bonus.jsonl.zst` + `lookUpTable_bonus_0.csv` — 4 015 rund bonus buy,
+  gwarantowane 5×–200×, RTP 97% kosztu (koszt 30× — niski, bo wincap to 200×;
+  do przebalansowania przy mechanice VS)
 
-**Wgrywanie w ACP:** te trzy pliki muszą leżeć w sekcji Math **na najwyższym
-poziomie** (żadnego folderu `math/` ani `publish/` w ścieżce — publikator
-szuka `index.json` w korzeniu). Usuń z sekcji Math wgrane wcześniej pliki
-źródłowe i wgraj tylko tę trójkę, potem Publish.
+**Wgrywanie w ACP:** wszystkie pliki z `math/publish/` muszą leżeć w sekcji
+Math **na najwyższym poziomie** (żadnego folderu `math/` ani `publish/`
+w ścieżce — publikator szuka `index.json` w korzeniu). Usuń z sekcji Math
+wgrane wcześniej pliki źródłowe i wgraj tylko tę piątkę, potem Publish.
 
 Reguły w `generate_publish.py` (paytable/linie/reels) muszą być zsynchronizowane
 z `game_config.py` — docelowo i tak zastąpi je pełny run math-sdk (poniżej).

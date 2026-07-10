@@ -1,4 +1,13 @@
-import { BET_STEPS, COLS, ROWS, START_BALANCE, SYMBOLS, WIN_CHANCE, WIN_MULTS } from '../config';
+import {
+  BET_STEPS,
+  BONUS_COST_MULT,
+  COLS,
+  ROWS,
+  START_BALANCE,
+  SYMBOLS,
+  WIN_CHANCE,
+  WIN_MULTS,
+} from '../config';
 import type { AuthResult, GameClient, RoundResult } from './client';
 
 const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -17,13 +26,17 @@ export class DemoClient implements GameClient {
     return { balance: this.balance, currency: 'USD', betLevels: BET_STEPS, defaultBet: null };
   }
 
-  async play(bet: number, mode = 'BASE'): Promise<RoundResult> {
-    if (this.balance < bet) throw new Error('ERR_IPB');
-    this.balance = +(this.balance - bet).toFixed(2);
+  async play(bet: number, mode = 'base'): Promise<RoundResult> {
+    const isBonus = mode.toLowerCase() === 'bonus';
+    const cost = isBonus ? bet * BONUS_COST_MULT : bet;
+    if (this.balance < cost) throw new Error('ERR_IPB');
+    this.balance = +(this.balance - cost).toFixed(2);
 
     let win = 0;
-    if (mode === 'BONUS') {
-      win = +(bet * (20 + Math.random() * 60)).toFixed(2);
+    if (isBonus) {
+      // mirrors the published bonus books: 5x..200x, ~15% above cost
+      const mult = Math.random() < 0.85 ? 5 + Math.random() * 22 : 40 + Math.random() * 160;
+      win = +(bet * Math.min(200, mult)).toFixed(2);
     } else if (Math.random() < WIN_CHANCE) {
       win = +(bet * pick(WIN_MULTS)).toFixed(2);
     }

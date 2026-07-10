@@ -1,4 +1,5 @@
 import { Container, Graphics, Texture, Ticker } from 'pixi.js';
+import { sound } from '../audio/sound';
 import { BOARD_H, BOARD_W, COLS, ROWS, STEP, SYMBOLS } from '../config';
 import { Reel } from './Reel';
 
@@ -33,7 +34,11 @@ export class SlotMachine {
    */
   async spin(turbo: boolean, target?: number[][] | null): Promise<number[][]> {
     const result = target ?? Array.from({ length: COLS }, () => this.randomColumn());
-    await Promise.all(this.reels.map((reel, i) => reel.spin(result[i], i, turbo)));
+    await Promise.all(
+      this.reels.map((reel, i) =>
+        reel.spin(result[i], i, turbo).then(() => sound.play('stop', { rate: 1 + i * 0.04, volume: 0.8 })),
+      ),
+    );
     this.grid = result;
     return result;
   }

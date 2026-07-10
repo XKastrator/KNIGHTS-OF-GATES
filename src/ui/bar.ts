@@ -1,3 +1,4 @@
+import { sound } from '../audio/sound';
 import { BONUS_COST_MULT } from '../config';
 import { SlotScene } from '../game/SlotScene';
 import type { GameClient } from '../rgs/client';
@@ -103,6 +104,10 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     }
     if (round.balance !== null) state.balance = round.balance;
 
+    // bought bonus opens with the knight duel (blue wins -> the round pays)
+    if (mode === 'bonus') await scene.playDuel();
+
+    sound.play('spin', { volume: 0.7 });
     await scene.machine.spin(state.turbo, round.grid);
 
     state.spinning = false;
@@ -114,6 +119,7 @@ export function initBar(scene: SlotScene, client: GameClient): void {
       } catch (err) {
         console.warn('end-round failed:', err);
       }
+      sound.play(round.win / stake >= 10 ? 'bigwin' : 'win');
       void scene.flashWin();
     }
     bus.emit('change');
@@ -180,13 +186,28 @@ export function initBar(scene: SlotScene, client: GameClient): void {
     }),
   );
 
-  // space = spin
+  // sound toggle in the settings modal
+  const toggleSound = $('#toggle-sound');
+  const renderSoundPill = () => {
+    toggleSound.textContent = sound.enabled ? 'WŁ.' : 'WYŁ.';
+    toggleSound.classList.toggle('off', !sound.enabled);
+  };
+  toggleSound.addEventListener('click', () => {
+    sound.setEnabled(!sound.enabled);
+    renderSoundPill();
+  });
+  renderSoundPill();
+
+  // space = spin, V = duel preview (dev)
   window.addEventListener('keydown', (e) => {
-    if (e.code !== 'Space') return;
     const modalOpen = Object.values(modals).some((m) => !m.classList.contains('hidden'));
     if (modalOpen) return;
-    e.preventDefault();
-    void doSpin();
+    if (e.code === 'Space') {
+      e.preventDefault();
+      void doSpin();
+    } else if (e.code === 'KeyV' && !state.spinning) {
+      void scene.playDuel();
+    }
   });
 
   render();

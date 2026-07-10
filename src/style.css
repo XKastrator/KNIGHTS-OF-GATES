@@ -141,6 +141,13 @@ button { font-family: var(--font); }
   color: #c9ced6; font-weight: 600;
 }
 .menu-row span { color: var(--label); font-size: 13px; }
+.pill {
+  min-width: 64px; padding: 6px 14px; border-radius: 999px;
+  border: 1.5px solid var(--accent); background: transparent;
+  color: var(--accent); font-weight: 800; font-size: 13px;
+  letter-spacing: 0.06em; cursor: pointer;
+}
+.pill.off { border-color: rgba(255, 255, 255, 0.25); color: var(--label); }
 
 .modal-card-auto { width: 420px; max-width: 92vw; padding: 24px; }
 .auto-title {

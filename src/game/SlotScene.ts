@@ -1,10 +1,12 @@
 import { Application, Container, Graphics, NineSliceSprite, Sprite, Texture } from 'pixi.js';
+import { sound } from '../audio/sound';
 import { BOARD_H, BOARD_W, BOARD_X, BOARD_Y, DESIGN, FRAME_BORDER, PLATE_PAD } from '../config';
 import { buildFallbackBackground } from '../fallback/background';
 import { buildFallbackFrame } from '../fallback/frame';
 import { buildFallbackLogo } from '../fallback/logo';
-import { tween } from '../util/tween';
+import { Eases, tween } from '../util/tween';
 import { SlotMachine } from './SlotMachine';
+import { VsPanel } from './VsPanel';
 
 export interface SceneTextures {
   bg: Texture | null;
@@ -23,6 +25,11 @@ export class SlotScene {
   private bg: Sprite;
   private world = new Container();
   private winGlow: Graphics;
+  private vsPanel: VsPanel | null = null;
+  private dim: Graphics;
+  private sparkTexture: Texture;
+  private worldBase = { x: 0, y: 0 };
+  private dueling = false;
 
   constructor(app: Application, tex: SceneTextures, symbolTextures: Texture[]) {
     this.app = app;
@@ -91,6 +98,21 @@ export class SlotScene {
     this.winGlow.alpha = 0;
     this.world.addChild(this.winGlow);
 
+    // full-scene dim used during the duel; sits on top of the world
+    this.dim = new Graphics();
+    this.dim.rect(-200, -200, DESIGN.width + 400, DESIGN.height + 400).fill(0x000000);
+    this.dim.alpha = 0;
+    this.dim.eventMode = 'none';
+    this.world.addChild(this.dim);
+
+    // knight-duel side panel (right column), async — scene works without it
+    void this.initVsPanel();
+
+    this.sparkTexture = app.renderer.generateTexture({
+      target: new Graphics().circle(0, 0, 4).fill(0xffe9a8),
+      resolution: 2,
+    });
+
     // Re-layout whenever the renderer's size actually changes. A plain window
     // "resize" listener fires before Pixi applies its own resize, which left
     // the scene scaled for stale dimensions.
@@ -119,8 +141,122 @@ export class SlotScene {
 
     const fit = Math.min(w / DESIGN.width, h / DESIGN.height);
     this.world.scale.set(fit);
-    this.world.position.set((w - DESIGN.width * fit) / 2, (h - DESIGN.height * fit) / 2);
+    this.worldBase = { x: (w - DESIGN.width * fit) / 2, y: (h - DESIGN.height * fit) / 2 };
+    this.world.position.set(this.worldBase.x, this.worldBase.y);
   }
+
+  private async initVsPanel(): Promise<void> {
+    const boardCenterY = BOARD_Y + BOARD_H / 2;
+    const panel = new VsPanel(BOARD_H + 2 * (PLATE_PAD + FRAME_BORDER + 12));
+    if (!(await panel.ready)) return; // video missing (e.g. offline dev) — skip
+    const rightEdge = BOARD_X + BOARD_W + PLATE_PAD + FRAME_BORDER + 24;
+    panel.view.position.set((rightEdge + DESIGN.width) / 2, boardCenterY);
+    // idle: below the dim layer; playDuel() raises it above for the fight
+    this.world.addChildAt(panel.view, this.world.getChildIndex(this.dim));
+    this.vsPanel = panel;
+  }
+
+  /**
+   * The duel: dim the table, run the 60fps clash (blue knight wins),
+   * shake on impact, spark burst, victory sting. Resolves when done.
+   */
+  async playDuel(): Promise<void> {
+    const panel = this.vsPanel;
+    if (!panel || this.dueling) return;
+    this.dueling = true;
+
+    // panel above the dim for the duration of the fight
+    this.world.setChildIndex(panel.view, this.world.children.length - 1);
+
+    sound.play('riser');
+    void tween({ from: this.dim.alpha, to: 0.5, duration: 220, onUpdate: (v) => (this.dim.alpha = v) });
+    void tween({
+      from: 1,
+      to: 1.05,
+      duration: 220,
+      ease: Eases.quadOut,
+      onUpdate: (v) => panel.view.scale.set(v),
+    });
+
+    // impact beat ~frame 30 of 60 @ 60fps
+    const clashAt = setTimeout(() => {
+      sound.play('clash');
+      this.shake(13, 380);
+      this.sparks(panel.view.x, panel.view.y);
+    }, 470);
+
+    await panel.play();
+    clearTimeout(clashAt);
+
+    sound.play('victory');
+    panel.flash(0.9);
+    void tween({ from: 0.9, to: 0, duration: 700, onUpdate: (v) => panel.flash(v) });
+    await tween({ from: this.dim.alpha, to: 0, duration: 320, onUpdate: (v) => (this.dim.alpha = v) });
+    await tween({ from: 1.05, to: 1, duration: 180, onUpdate: (v) => panel.view.scale.set(v) });
+
+    // hold the victory pose for a bit, then ease back to the stand-off frame
+    setTimeout(() => {
+      panel.reset();
+      if (this.vsPanel) {
+        this.world.setChildIndex(this.vsPanel.view, this.world.getChildIndex(this.dim));
+      }
+    }, 4000);
+    this.dueling = false;
+  }
+
+  /** Decaying random world offset — impact feedback. */
+  private shake(intensity: number, durationMs: number): void {
+    let elapsed = 0;
+    const tick = () => {
+      elapsed += this.app.ticker.deltaMS;
+      const k = Math.min(1, elapsed / durationMs);
+      const amp = intensity * (1 - k) ** 2;
+      this.world.position.set(
+        this.worldBase.x + (Math.random() * 2 - 1) * amp,
+        this.worldBase.y + (Math.random() * 2 - 1) * amp,
+      );
+      if (k >= 1) {
+        this.world.position.set(this.worldBase.x, this.worldBase.y);
+        this.app.ticker.remove(tick);
+      }
+    };
+    this.app.ticker.add(tick);
+  }
+
+  /** Radial burst of gold sparks at (x, y) in world space. */
+  private sparks(x: number, y: number): void {
+    const parts: { s: Sprite; vx: number; vy: number }[] = [];
+    for (let i = 0; i < 26; i++) {
+      const s = new Sprite(this.sparkTexture);
+      s.anchor.set(0.5);
+      s.position.set(x, y);
+      s.blendMode = 'add';
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 4 + Math.random() * 12;
+      parts.push({ s, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 3 });
+      this.world.addChild(s);
+    }
+    let elapsed = 0;
+    const life = 560;
+    const tick = () => {
+      const dt = this.app.ticker.deltaMS;
+      elapsed += dt;
+      const k = elapsed / life;
+      for (const p of parts) {
+        p.vy += 0.35;
+        p.s.x += p.vx;
+        p.s.y += p.vy;
+        p.s.alpha = 1 - k;
+        p.s.scale.set(1 - k * 0.6);
+      }
+      if (k >= 1) {
+        this.app.ticker.remove(tick);
+        parts.forEach((p) => p.s.destroy());
+      }
+    };
+    this.app.ticker.add(tick);
+  }
+
 
   /** Gold pulse around the frame on a win. */
   async flashWin(): Promise<void> {
